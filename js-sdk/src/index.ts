@@ -626,18 +626,12 @@ export async function hasRole(
             );
         }
     } else {
-        // Fallback: create a minimal simulated account object
-        // This is less reliable but works for basic simulation
-        const tempKeypair = Keypair.random();
-        sourceAccount = {
-            accountId: () => tempKeypair.publicKey(),
-            sequenceNumber: () => '0',
-            incrementSequenceNumber: () => { },
-        } as unknown as import('@stellar/stellar-sdk').Account;
-
-        console.warn(
-            '[SDK] hasRole: No readOnlyAccount configured. Using simulated account. ' +
-            'Configure SDK with configureSDK({ readOnlyAccount: "GXXX..." }) for reliability.'
+        // Strict mode: require readOnlyAccount for reliable simulation
+        throw new RoleCheckError(
+            'No readOnlyAccount configured. ' +
+            'Call configureSDK({ readOnlyAccount: "GXXX..." }) or pass { readOnlyAccount: "..." } in options.',
+            null,
+            false
         );
     }
 
