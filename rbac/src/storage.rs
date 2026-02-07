@@ -1,9 +1,8 @@
-//! Storage key types for the RBAC contract.
+//! storage key types for the RBAC contract.
 
 use soroban_sdk::{contracttype, Address, Symbol};
 
 /// Storage key types for the RBAC contract.
-/// Using contracttype for efficient serialization.
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
