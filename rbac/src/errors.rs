@@ -14,4 +14,6 @@ pub enum RbacError {
     RoleNotFound = 3,
     /// acc not authorized
     NotMember = 4,
+    /// role already exists
+    RoleAlreadyExists = 5,
 }

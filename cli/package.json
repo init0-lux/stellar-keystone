@@ -26,9 +26,11 @@
     "dependencies": {
         "@stellar-keystone/sdk": "file:../js-sdk",
         "@stellar/stellar-sdk": "^12.0.0",
+        "better-sqlite3": "^12.6.2",
         "commander": "^12.0.0"
     },
     "devDependencies": {
+        "@types/better-sqlite3": "^7.6.13",
         "@types/jest": "^29.5.12",
         "@types/node": "^20.11.0",
         "@typescript-eslint/eslint-plugin": "^6.21.0",
