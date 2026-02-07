@@ -190,10 +190,37 @@ class RbacIndexer {
             .all() as Array<{ id: string }>;
 
         for (const contract of contracts) {
+            await this.pollWithRetry(contract.id);
+        }
+    }
+
+    /**
+     * Poll a contract with retry logic
+     */
+    private async pollWithRetry(
+        contractId: string,
+        maxRetries: number = 3
+    ): Promise<void> {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                await this.pollContract(contract.id);
+                await this.pollContract(contractId);
+                return; // Success
             } catch (error) {
-                console.error(`[Indexer] Error polling ${contract.id}:`, error);
+                const isLastAttempt = attempt === maxRetries;
+                const errorMsg = error instanceof Error ? error.message : String(error);
+
+                if (isLastAttempt) {
+                    console.error(
+                        `[Indexer] Failed to poll ${contractId} after ${maxRetries} attempts: ${errorMsg}`
+                    );
+                } else {
+                    const backoffMs = 1000 * Math.pow(2, attempt - 1); // 1s, 2s, 4s
+                    console.warn(
+                        `[Indexer] Attempt ${attempt}/${maxRetries} failed for ${contractId}, ` +
+                        `retrying in ${backoffMs}ms...`
+                    );
+                    await this.sleep(backoffMs);
+                }
             }
         }
     }
@@ -213,9 +240,7 @@ class RbacIndexer {
                         contractIds: [contractId],
                     },
                 ],
-                pagination: {
-                    limit: 1000,
-                },
+                limit: 1000,
             });
 
             if (response.events && response.events.length > 0) {
@@ -299,7 +324,9 @@ class RbacIndexer {
                 eventType,
                 role: String(topics[1] || ''),
                 txHash: event.id,
-                ledgerTimestamp: event.ledgerCloseTime ?? Math.floor(Date.now() / 1000),
+                ledgerTimestamp: event.ledgerClosedAt
+                    ? parseInt(event.ledgerClosedAt, 10)
+                    : Math.floor(Date.now() / 1000),
             };
 
             // Extract account from topics if present

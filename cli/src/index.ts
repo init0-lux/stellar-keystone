@@ -62,6 +62,23 @@ interface LintReport {
 }
 
 // =============================================================================
+// Helper Functions
+// =============================================================================
+
+/**
+ * Format error for user-friendly display.
+ */
+function formatError(error: unknown): string {
+    if (error instanceof Error) {
+        return error.message;
+    }
+    if (typeof error === 'string') {
+        return error;
+    }
+    return String(error);
+}
+
+// =============================================================================
 // CLI Setup
 // =============================================================================
 
@@ -99,7 +116,7 @@ program
             console.log(`   TX Hash: ${result.txHash}`);
             console.log(`\nSave this contract ID for future commands.`);
         } catch (error) {
-            console.error('Deployment failed:', error);
+            console.error('Deployment failed:', formatError(error));
             process.exit(1);
         }
     });
@@ -140,7 +157,7 @@ program
             console.log(`   Admin: ${options.admin}`);
             console.log(`   TX Hash: ${txHash}`);
         } catch (error) {
-            console.error('Failed to create role:', error);
+            console.error('Failed to create role:', formatError(error));
             process.exit(1);
         }
     });
@@ -198,7 +215,7 @@ program
             console.log('\n✅ Role granted successfully!');
             console.log(`   TX Hash: ${txHash}`);
         } catch (error) {
-            console.error('Failed to grant role:', error);
+            console.error('Failed to grant role:', formatError(error));
             process.exit(1);
         }
     });
@@ -237,8 +254,56 @@ program
             console.log('\n✅ Role revoked successfully!');
             console.log(`   TX Hash: ${txHash}`);
         } catch (error) {
-            console.error('Failed to revoke role:', error);
+            console.error('Failed to revoke role:', formatError(error));
             process.exit(1);
+        }
+    });
+
+// =============================================================================
+// Has Role Command (NEW)
+// =============================================================================
+
+program
+    .command('has-role')
+    .description('Check if an account has a specific role')
+    .requiredOption('--contract <contractId>', 'RBAC contract ID')
+    .requiredOption('--role <roleName>', 'Role to check')
+    .requiredOption('--address <address>', 'Address to check')
+    .option('--network <network>', 'Network to use (local or testnet)', 'testnet')
+    .option('--json', 'Output result as JSON', false)
+    .action(async (options) => {
+        try {
+            const network = options.network as NetworkType;
+
+            console.log(`\nChecking if ${options.address} has role "${options.role}"...`);
+
+            const result = await hasRole(
+                options.contract,
+                options.role,
+                options.address,
+                network
+            );
+
+            if (options.json) {
+                console.log(JSON.stringify({
+                    contract: options.contract,
+                    role: options.role,
+                    address: options.address,
+                    hasRole: result
+                }, null, 2));
+            } else {
+                if (result) {
+                    console.log(`\n✅ Account HAS role "${options.role}"`);
+                } else {
+                    console.log(`\n❌ Account does NOT have role "${options.role}"`);
+                }
+            }
+
+            // Exit with code 0 if has role, 1 if not (useful for scripting)
+            process.exit(result ? 0 : 1);
+        } catch (error) {
+            console.error('Failed to check role:', formatError(error));
+            process.exit(2); // Use 2 for errors to distinguish from "doesn't have role"
         }
     });
 
