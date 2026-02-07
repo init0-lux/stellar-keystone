@@ -1,0 +1,14 @@
+# rustfmt configuration for stellar-keystone
+# https://rust-lang.github.io/rustfmt/
+
+edition = "2021"
+max_width = 100
+tab_spaces = 4
+newline_style = "Unix"
+use_small_heuristics = "Default"
+reorder_imports = true
+reorder_modules = true
+remove_nested_parens = true
+format_strings = false
+format_macro_matchers = false
+format_macro_bodies = true
