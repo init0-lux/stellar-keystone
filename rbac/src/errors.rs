@@ -18,4 +18,8 @@ pub enum RbacError {
     RoleAlreadyExists = 5,
     /// cannot set role as its own admin (except DEFAULT_ADMIN_ROLE)
     InvalidSelfAdmin = 6,
+    /// contract already initialized
+    AlreadyInitialized = 7,
+    /// internal storage state is corrupted
+    StorageCorrupted = 8,
 }

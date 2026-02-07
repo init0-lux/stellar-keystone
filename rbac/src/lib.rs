@@ -40,7 +40,7 @@ mod storage;
 pub use errors::RbacError;
 pub use storage::DataKey;
 
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, panic_with_error, symbol_short, Address, Env, Symbol};
 
 /// The default admin role symbol with supreme authority over all roles.
 ///
@@ -66,16 +66,16 @@ impl RbacContract {
     /// # Arguments
     /// * `admin` - The address to grant DEFAULT_ADMIN_ROLE to
     ///
-    /// # Panics
-    /// Panics if the contract is already initialized.
+    /// # Errors
+    /// Returns `AlreadyInitialized` if the contract is already initialized.
     ///
     /// # Note
     /// - Sets `Initialized` flag first (atomicity guarantee)
     /// - Stores `RoleExists(DEFAULT_ADMIN_ROLE)` to encode the invariant structurally
-    pub fn initialize(env: Env, admin: Address) {
+    pub fn initialize(env: Env, admin: Address) -> Result<(), RbacError> {
         // Ensure not already initialized (use persistent storage)
         if env.storage().persistent().has(&DataKey::Initialized) {
-            panic!("Already initialized");
+            return Err(RbacError::AlreadyInitialized);
         }
 
         // Set initialized FIRST (atomicity: any failure after this is visible)
@@ -108,6 +108,8 @@ impl RbacContract {
         // Emit events
         events::role_created(&env, role.clone(), role.clone());
         events::role_granted(&env, role, admin.clone(), 0, admin);
+
+        Ok(())
     }
 
     // =========================================================================
@@ -135,7 +137,7 @@ impl RbacContract {
     /// Roles are immutable once created. There is no `delete_role` function.
     pub fn create_role(env: Env, caller: Address, role: Symbol, admin_role: Symbol) -> Result<(), RbacError> {
         // Authorize caller
-        Self::internal_require_role(&env, DEFAULT_ADMIN_ROLE, &caller)?;
+        Self::internal_require_role(env.clone(), DEFAULT_ADMIN_ROLE, &caller)?;
 
         // Reject if role already exists (strict create-only semantics)
         if env.storage().persistent().has(&DataKey::RoleExists(role.clone())) {
@@ -145,7 +147,7 @@ impl RbacContract {
         // Corruption check: RoleAdmin should not exist without RoleExists
         if env.storage().persistent().has(&DataKey::RoleAdmin(role.clone())) {
             // This should never happen — indicates corrupted state
-            panic!("Corrupted state: RoleAdmin exists without RoleExists");
+            panic_with_error!(&env, RbacError::StorageCorrupted);
         }
 
         // Validate admin_role exists
@@ -187,7 +189,7 @@ impl RbacContract {
     /// - `InvalidSelfAdmin` if role == admin_role (except DEFAULT_ADMIN_ROLE)
     pub fn set_role_admin(env: Env, caller: Address, role: Symbol, admin_role: Symbol) -> Result<(), RbacError> {
         // Only DEFAULT_ADMIN_ROLE can change role admins
-        Self::internal_require_role(&env, DEFAULT_ADMIN_ROLE, &caller)?;
+        Self::internal_require_role(env.clone(), DEFAULT_ADMIN_ROLE, &caller)?;
 
         // Validate role exists
         Self::require_role_exists(&env, &role)?;
@@ -254,7 +256,7 @@ impl RbacContract {
             .unwrap_or(DEFAULT_ADMIN_ROLE);
 
         // Caller must have admin role — caller is the granter
-        Self::internal_require_role(&env, admin_role, &caller)?;
+        Self::internal_require_role(env.clone(), admin_role, &caller)?;
 
         // Validate expiry: if non-zero, must be in the future (exclusive semantics)
         // Role valid while current_time < expiry, so expiry must be > current_time
@@ -306,7 +308,7 @@ impl RbacContract {
             .unwrap_or(DEFAULT_ADMIN_ROLE);
 
         // Caller must have admin role — caller is the revoker
-        Self::internal_require_role(&env, admin_role, &caller)?;
+        Self::internal_require_role(env.clone(), admin_role, &caller)?;
 
         // Remove membership and expiry
         env.storage()
@@ -510,12 +512,20 @@ impl RbacContract {
     /// # Authorization
     /// This is the single source of auth for all privileged functions.
     /// Caller must call `require_auth()` on themselves.
-    fn internal_require_role(env: &Env, role: Symbol, caller: &Address) -> Result<(), RbacError> {
+    /// Internal function to verify caller has a required role.
+    /// 
+    /// # Arguments
+    /// * `caller` - The address to authenticate and check role for
+    ///
+    /// # Authorization
+    /// This is the single source of auth for all privileged functions.
+    /// Caller must call `require_auth()` on themselves.
+    fn internal_require_role(env: Env, role: Symbol, caller: &Address) -> Result<(), RbacError> {
         // Require cryptographic proof that caller controls this address
         caller.require_auth();
 
         // Check if caller has the required role
-        if !Self::has_role(env.clone(), role, caller.clone()) {
+        if !Self::has_role(env, role, caller.clone()) {
             return Err(RbacError::NotAuthorized);
         }
 
@@ -549,7 +559,12 @@ mod tests {
 
     #[test]
     fn test_initialize() {
-        let (_env, admin, client) = setup_env();
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let contract_id = env.register(RbacContract, ());
+        let client = RbacContractClient::new(&env, &contract_id);
+
+        client.initialize(&admin);
 
         // Check deployer is set
         let deployer = client.get_deployer();
@@ -558,6 +573,11 @@ mod tests {
         // Check admin has DEFAULT_ADMIN_ROLE
         let default_admin = client.default_admin_role();
         assert!(client.has_role(&default_admin, &admin));
+        assert!(client.role_exists(&default_admin));
+
+        // Attempt double initialization - should fail with AlreadyInitialized
+        let result = client.try_initialize(&admin);
+        assert_eq!(result.unwrap_err(), Ok(RbacError::AlreadyInitialized));
     }
 
     #[test]
@@ -694,7 +714,7 @@ mod tests {
 
     #[test]
     fn test_set_role_admin() {
-        let (env, admin, client) = setup_env();
+        let (_env, admin, client) = setup_env();
 
         let role = symbol_short!("ROLE1");
         let admin_role = client.default_admin_role();
