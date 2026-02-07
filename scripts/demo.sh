@@ -1,22 +1,13 @@
 #!/bin/bash
-# Stellar Keystone Demo Script
+# Stellar Keystone RBAC Demo Script
 # 
-# This script demonstrates the full RBAC workflow:
-# 1. Build and deploy the RBAC contract
-# 2. Create roles
-# 3. Grant roles with expiry
-# 4. Verify role checks
-# 5. Revoke roles
-#
-# Prerequisites:
-# - Soroban CLI installed
-# - Node.js 20+
-# - Local Soroban network running
+# This is a thin launcher that checks prerequisites and runs the TypeScript demo.
 
 set -e
 
 echo "=========================================="
-echo "  Stellar Keystone Demo"
+echo "  Stellar Keystone RBAC Demo"
+echo "  Complete Feature Demonstration"
 echo "=========================================="
 echo
 
@@ -26,157 +17,122 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Check prerequisites
-check_prereqs() {
-    echo -e "${BLUE}Checking prerequisites...${NC}"
-    
-    if ! command -v soroban &> /dev/null; then
-        echo "Error: soroban CLI not found. Install with: cargo install soroban-cli"
-        exit 1
-    fi
-    
-    if ! command -v node &> /dev/null; then
-        echo "Error: Node.js not found"
-        exit 1
-    fi
-    
-    echo -e "${GREEN}✓ Prerequisites satisfied${NC}"
-    echo
-}
+# Check Node.js
+echo -e "${BLUE}▶ Checking prerequisites...${NC}"
+if ! command -v node &> /dev/null; then
+    echo -e "${YELLOW}  ⚠️  Node.js not found${NC}"
+    echo "  Please install Node.js 20+ to run this demo"
+    exit 1
+fi
 
-# Build the RBAC contract
-build_contract() {
-    echo -e "${BLUE}Building RBAC contract...${NC}"
+NODE_VERSION=$(node --version | cut -d'.' -f1 | sed 's/v//')
+if [ "$NODE_VERSION" -lt 20 ]; then
+    echo -e "${YELLOW}  ⚠️  Node.js version too old: $(node --version)${NC}"
+    echo "  Please upgrade to Node.js 20+"
+    exit 1
+fi
+
+echo -e "${GREEN}  ✓ Node.js found: $(node --version)${NC}"
+
+# Check if contract WASM exists
+if [ ! -f "rbac/target/wasm32-unknown-unknown/release/stellar_keystone_rbac.wasm" ]; then
+    echo -e "${YELLOW}  ⚠️  RBAC contract WASM not found${NC}"
+    echo "  Building contract..."
+    
+    if ! command -v cargo &> /dev/null; then
+        echo "  Error: Rust/Cargo not installed"
+        echo "  Install from: https://rustup.rs"
+        exit 1
+    fi
+    
     cd rbac
-    cargo build --release --target wasm32-unknown-unknown 2>/dev/null || {
-        echo -e "${YELLOW}Note: Contract build skipped (demo mode)${NC}"
-    }
+    cargo build --target wasm32-unknown-unknown --release
     cd ..
-    echo -e "${GREEN}✓ Contract ready${NC}"
-    echo
-}
+    echo -e "${GREEN}  ✓ Contract built${NC}"
+else
+    echo -e "${GREEN}  ✓ Contract WASM found${NC}"
+fi
 
-# Deploy to local network
-deploy_contract() {
-    echo -e "${BLUE}Deploying RBAC contract...${NC}"
-    
-    # Create a demo identity if it doesn't exist
-    soroban keys generate demo --network local 2>/dev/null || true
-    
-    # For demo purposes, we'll simulate deployment
-    DEMO_CONTRACT_ID="CDEMO$(date +%s | sha256sum | head -c10 | tr '[:lower:]' '[:upper:]')"
-    
-    echo -e "${GREEN}✓ Contract deployed: ${DEMO_CONTRACT_ID}${NC}"
-    echo
-    export DEMO_CONTRACT_ID
-}
+# Get network from arguments
+NETWORK="${1:-testnet}"
 
-# Create roles
-create_roles() {
-    echo -e "${BLUE}Creating roles...${NC}"
-    
-    echo "  → Creating WITHDRAWER role (admin: DEF_ADMIN)"
-    # rbac create-role --contract $DEMO_CONTRACT_ID --role WITHDRAWER --admin DEF_ADMIN --key-env DEMO_KEY
-    
-    echo "  → Creating OPERATOR role (admin: DEF_ADMIN)"
-    # rbac create-role --contract $DEMO_CONTRACT_ID --role OPERATOR --admin DEF_ADMIN --key-env DEMO_KEY
-    
-    echo "  → Creating VIEWER role (admin: OPERATOR)"
-    # rbac create-role --contract $DEMO_CONTRACT_ID --role VIEWER --admin OPERATOR --key-env DEMO_KEY
-    
-    echo -e "${GREEN}✓ Roles created${NC}"
-    echo
-}
+if [ "$NETWORK" != "local" ] && [ "$NETWORK" != "testnet" ]; then
+    echo -e "${YELLOW}Error: Invalid network \"$NETWORK\"${NC}"
+    echo "Usage: $0 [local|testnet]"
+    exit 1
+fi
 
-# Grant roles
-grant_roles() {
-    echo -e "${BLUE}Granting roles...${NC}"
-    
-    DEMO_ADDRESS="GDEMO$(date +%N | sha256sum | head -c50 | tr '[:lower:]' '[:upper:]')"
-    
-    echo "  → Granting WITHDRAWER to $DEMO_ADDRESS (expires: 24h)"
-    EXPIRY=$(date -d "+24 hours" --iso-8601=seconds 2>/dev/null || date -v+24H +%Y-%m-%dT%H:%M:%S%z)
-    # rbac grant --contract $DEMO_CONTRACT_ID --role WITHDRAWER --address $DEMO_ADDRESS --expiry $EXPIRY --key-env DEMO_KEY
-    
-    echo "  → Granting OPERATOR to $DEMO_ADDRESS (never expires)"
-    # rbac grant --contract $DEMO_CONTRACT_ID --role OPERATOR --address $DEMO_ADDRESS --key-env DEMO_KEY
-    
-    echo -e "${GREEN}✓ Roles granted${NC}"
-    echo
-}
+echo -e "${GREEN}  ✓ Network: $NETWORK${NC}"
 
-# Check roles
-check_roles() {
-    echo -e "${BLUE}Verifying role assignments...${NC}"
+# Check/generate signer key
+if [ -z "$DEMO_SIGNER_KEY" ]; then
+    echo -e "${YELLOW}  ⚠️  DEMO_SIGNER_KEY not set${NC}"
     
-    echo "  → Checking WITHDRAWER role"
-    # Output would show role status via RPC simulation
-    
-    echo "  → Checking OPERATOR role"
-    
-    echo -e "${GREEN}✓ Role checks passed${NC}"
-    echo
-}
+    if [ "$NETWORK" = "local" ]; then
+        echo "  Generating temporary key for local network..."
+        
+        if ! command -v stellar &> /dev/null; then
+            echo "  Error: Stellar CLI not installed"
+            echo "  Install from: https://developers.stellar.org/docs/tools/developer-tools"
+            exit 1
+        fi
+        
+        # Generate temporary keypair
+        DEMO_SIGNER_KEY=$(stellar keys generate demo --network standalone 2>&1 | grep -oP 'Secret key: \K.*' || echo "")
+        
+        if [ -z "$DEMO_SIGNER_KEY" ]; then
+            echo "  Error: Failed to generate key"
+            exit 1
+        fi
+        
+        export DEMO_SIGNER_KEY
+        echo -e "${GREEN}  ✓ Generated temporary key${NC}"
+    else
+        echo "  Error: DEMO_SIGNER_KEY required for testnet"
+        echo "  Please set the environment variable:"
+        echo "    export DEMO_SIGNER_KEY=SXXX..."
+        echo ""
+        echo "  Get a funded testnet account at:"
+        echo "    https://laboratory.stellar.org/#account-creator?network=test"
+        exit 1
+    fi
+else
+    echo -e "${GREEN}  ✓ DEMO_SIGNER_KEY found${NC}"
+fi
 
-# List members
-list_members() {
-    echo -e "${BLUE}Listing role members (via indexer)...${NC}"
-    echo
-    
-    # rbac list-members --contract $DEMO_CONTRACT_ID --role WITHDRAWER
-    echo "  WITHDRAWER members:"
-    echo "    ✅ GDEMO...ABCD (expires: 24h)"
-    echo
-    
-    # rbac list-members --contract $DEMO_CONTRACT_ID --role OPERATOR
-    echo "  OPERATOR members:"
-    echo "    ✅ GDEMO...ABCD (never expires)"
-    echo
-}
+echo -e "${GREEN}✓ Prerequisites checked${NC}"
+echo
 
-# Run lint checks
-run_lint() {
-    echo -e "${BLUE}Running lint checks...${NC}"
-    
-    # rbac lint --contract $DEMO_CONTRACT_ID
-    echo "  ⚠️  [default_admin_held_by_deployer] Admin may need rotation"
-    echo "  ℹ️  [roles_without_admin] All roles have admin roles configured"
-    echo "  ℹ️  [expired_roles_present] No expired role assignments found"
+# Install dependencies if needed
+if [ ! -d "js-sdk/node_modules" ]; then
+    echo -e "${BLUE}▶ Installing SDK dependencies...${NC}"
+    cd js-sdk && npm install && cd ..
+    echo -e "${GREEN}✓ Dependencies installed${NC}"
     echo
-    echo -e "${GREEN}✓ Lint checks complete${NC}"
-    echo
-}
+fi
 
-# Demo Complete
-demo_complete() {
-    echo "=========================================="
-    echo -e "${GREEN}  Demo Complete!${NC}"
-    echo "=========================================="
+# Build SDK if needed
+if [ ! -d "js-sdk/dist" ]; then
+    echo -e "${BLUE}▶ Building SDK...${NC}"
+    cd js-sdk && npm run build && cd ..
+    echo -e "${GREEN}✓ SDK built${NC}"
     echo
-    echo "Summary:"
-    echo "  • RBAC contract deployed"
-    echo "  • 3 roles created (WITHDRAWER, OPERATOR, VIEWER)"
-    echo "  • 2 role grants issued"
-    echo "  • Lint checks passed"
-    echo
-    echo "Next steps:"
-    echo "  1. Start the indexer: cd indexer && npm start"
-    echo "  2. Start the frontend: cd frontend && npm run dev"
-    echo "  3. Open http://localhost:3000"
-    echo
-}
+fi
 
-# Main
-main() {
-    check_prereqs
-    build_contract
-    deploy_contract
-    create_roles
-    grant_roles
-    check_roles
-    list_members
-    run_lint
-    demo_complete
-}
+# Run the demo
+echo -e "${BLUE}▶ Running demo on $NETWORK...${NC}"
+echo
 
-main
+npx tsx scripts/demo.ts "$NETWORK"
+
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -eq 0 ]; then
+    echo
+    echo -e "${GREEN}Demo completed successfully!${NC}"
+else
+    echo
+    echo -e "${YELLOW}Demo exited with code $EXIT_CODE${NC}"
+fi
+
+exit $EXIT_CODE

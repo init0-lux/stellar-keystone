@@ -569,6 +569,133 @@ export async function revokeRole(
 }
 
 /**
+ * Change the admin role for a role.
+ *
+ * @param contractId - The RBAC contract ID
+ * @param role - The role to modify
+ * @param newAdminRole - The new admin role
+ * @param signerKey - Secret key for signing
+ * @param network - Network to use (default: 'testnet')
+ * @returns Transaction hash
+ *
+ * @example
+ * ```typescript
+ * // Transfer WITHDRAWER admin from DEF_ADMIN to OPERATOR
+ * await setRoleAdmin(contractId, 'WITHDRAWER', 'OPERATOR', signerKey);
+ * ```
+ */
+export async function setRoleAdmin(
+    contractId: string,
+    role: string,
+    newAdminRole: string,
+    signerKey: string,
+    network: NetworkType = 'testnet'
+): Promise<TxHash> {
+    const config = NETWORK_CONFIG[network];
+    const server = getRpcServer(network);
+    const keypair = getKeypairFromSecret(signerKey);
+    const publicKey = keypair.publicKey();
+
+    // Get account
+    const signerAccount = await server.getAccount(publicKey);
+
+    // Create contract instance
+    const contract = new Contract(contractId);
+
+    // Build the transaction
+    const transaction = new TransactionBuilder(signerAccount, {
+        fee: '100000',
+        networkPassphrase: config.passphrase,
+    })
+        .addOperation(
+            contract.call(
+                'set_role_admin',
+                nativeToScVal(role, { type: 'symbol' }),
+                nativeToScVal(newAdminRole, { type: 'symbol' })
+            )
+        )
+        .setTimeout(TX_TIMEOUT);
+
+    const { hash } = await submitTransaction(server, transaction, keypair);
+
+    console.log(`[SDK] Changed admin for "${role}" to "${newAdminRole}"`);
+    console.log(`[SDK] TX: ${hash}`);
+
+    return hash;
+}
+
+/**
+ * Cleanup an expired role assignment.
+ *
+ * This explicitly removes expired role storage. Note that has_role()
+ * already returns false for expired roles, but this frees up storage.
+ *
+ * @param contractId - The RBAC contract ID
+ * @param role - The role to cleanup
+ * @param account - The account address with expired role
+ * @param signerKey - Secret key for signing
+ * @param network - Network to use (default: 'testnet')
+ * @returns True if role was expired and removed, false otherwise
+ *
+ * @example
+ * ```typescript
+ * const wasExpired = await cleanupExpiredRole(contractId, 'AUDITOR', account, signerKey);
+ * if (wasExpired) {
+ *   console.log('Expired role cleaned up');
+ * }
+ * ```
+ */
+export async function cleanupExpiredRole(
+    contractId: string,
+    role: string,
+    account: string,
+    signerKey: string,
+    network: NetworkType = 'testnet'
+): Promise<boolean> {
+    const config = NETWORK_CONFIG[network];
+    const server = getRpcServer(network);
+    const keypair = getKeypairFromSecret(signerKey);
+    const publicKey = keypair.publicKey();
+
+    // Get account
+    const signerAccount = await server.getAccount(publicKey);
+
+    // Create contract instance
+    const contract = new Contract(contractId);
+
+    // Build the transaction
+    const transaction = new TransactionBuilder(signerAccount, {
+        fee: '100000',
+        networkPassphrase: config.passphrase,
+    })
+        .addOperation(
+            contract.call(
+                'cleanup_expired_role',
+                nativeToScVal(role, { type: 'symbol' }),
+                new Address(account).toScVal()
+            )
+        )
+        .setTimeout(TX_TIMEOUT);
+
+    const { hash, result } = await submitTransaction(server, transaction, keypair);
+
+    // Extract return value (bool indicating if role was expired)
+    let wasExpired = false;
+    if (result.status === 'SUCCESS' && result.returnValue) {
+        wasExpired = scValToNative(result.returnValue) as boolean;
+    }
+
+    if (wasExpired) {
+        console.log(`[SDK] Cleaned up expired role "${role}" for ${account}`);
+    } else {
+        console.log(`[SDK] Role "${role}" for ${account} was not expired`);
+    }
+    console.log(`[SDK] TX: ${hash}`);
+
+    return wasExpired;
+}
+
+/**
  * Check if an account has a specific role.
  *
  * @param contractId - The RBAC contract ID

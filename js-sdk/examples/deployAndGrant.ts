@@ -21,7 +21,7 @@
  *   npx ts-node examples/deployAndGrant.ts testnet
  */
 
-import { deployRbac, createRole, grantRole, hasRole, NetworkType } from '../src/index';
+import { deployRbac, createRole, grantRole, hasRole, configureSDK, RoleCheckError, NetworkType } from '../src/index';
 import { Keypair } from '@stellar/stellar-sdk';
 
 async function main() {
@@ -41,6 +41,9 @@ async function main() {
         console.log(`\n🚀 Starting RBAC Deployment Example`);
         console.log(`Network: ${network}`);
         console.log(`Signer: ${signer.publicKey()}\n`);
+
+        // Configure SDK with read-only account for reliable simulations
+        configureSDK({ readOnlyAccount: signer.publicKey() });
 
         // Step 1: Deploy RBAC Contract
         console.log('═'.repeat(60));
@@ -102,18 +105,29 @@ async function main() {
         console.log('Step 4: Verifying Role Grant');
         console.log('═'.repeat(60));
 
-        const hasWithdrawerRole = await hasRole(
-            contractId,
-            'WITHDRAWER',
-            testUser.publicKey()
-        );
+        try {
+            const hasWithdrawerRole = await hasRole(
+                contractId,
+                'WITHDRAWER',
+                testUser.publicKey(),
+                network
+            );
 
-        if (hasWithdrawerRole) {
-            console.log(`\n✅ Verification passed`);
-            console.log(`   ${testUser.publicKey().substring(0, 10)}... has WITHDRAWER role\n`);
-        } else {
-            console.log(`\n❌ Verification failed`);
-            console.log(`   ${testUser.publicKey().substring(0, 10)}... does NOT have WITHDRAWER role\n`);
+            if (hasWithdrawerRole) {
+                console.log(`\n✅ Verification passed`);
+                console.log(`   ${testUser.publicKey().substring(0, 10)}... has WITHDRAWER role\n`);
+            } else {
+                console.log(`\n❌ Verification failed`);
+                console.log(`   ${testUser.publicKey().substring(0, 10)}... does NOT have WITHDRAWER role\n`);
+            }
+        } catch (error) {
+            if (error instanceof RoleCheckError) {
+                console.error(`\n❌ Network error checking role: ${error.message}`);
+                if (error.isTransportError) {
+                    console.error('   This was a transport/network failure, not a permission denial');
+                }
+            }
+            throw error;
         }
 
         // Summary
