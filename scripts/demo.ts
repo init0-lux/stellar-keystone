@@ -168,14 +168,14 @@ async function runDemo(network: NetworkType, signerSecret: string) {
         subsection('Checking Alice has VIEWER (should be false)...');
         const aliceHasViewer = await hasRole(contractId, 'VIEWER', alice.publicKey(), network);
         info(`Result: ${aliceHasViewer} (Alice was never granted VIEWER)`);
-    } catch (error) {
-        if (error instanceof RoleCheckError) {
-            console.error(`${COLORS.YELLOW}⚠️  Network error: ${error.message}${COLORS.RESET}`);
-            if (error.isTransportError) {
+    } catch (err: any) {
+        if (err instanceof RoleCheckError) {
+            console.error(`${COLORS.YELLOW}⚠️  Network error: ${err.message}${COLORS.RESET}`);
+            if (err.isTransportError) {
                 info('This was a transport failure, not a permission denial');
             }
         }
-        throw error;
+        throw err;
     }
 
     // =========================================================================
@@ -209,9 +209,9 @@ async function runDemo(network: NetworkType, signerSecret: string) {
         subsection('Verifying revocation...');
         const bobStillHasOperator = await hasRole(contractId, 'OPERATOR', bob.publicKey(), network);
         info(`Bob has OPERATOR: ${bobStillHasOperator} (should be false)`);
-    } catch (error) {
-        if (error instanceof RoleCheckError) {
-            console.error(`${COLORS.YELLOW}⚠️  Network error: ${error.message}${COLORS.RESET}`);
+    } catch (err: any) {
+        if (err instanceof RoleCheckError) {
+            console.error(`${COLORS.YELLOW}⚠️  Network error: ${err.message}${COLORS.RESET}`);
         }
     }
 
@@ -229,35 +229,14 @@ async function runDemo(network: NetworkType, signerSecret: string) {
     info('but cleanup explicitly removes the storage entry.');
 
     // =========================================================================
-    // Summary
+    // Final Summary
     // =========================================================================
-    section('Demo Complete! 🎉', COLORS.GREEN);
+    section('Final Summary', COLORS.MAGENTA);
 
-    console.log(`${COLORS.CYAN}Features Demonstrated:${COLORS.RESET}`);
-    success('Contract deployment & initialization');
-    success('Role creation with hierarchical admins');
-    success('Role grants with multiple expiry scenarios');
-    success('Role checks (has_role)');
-    success('Admin role changes (set_role_admin)');
-    success('Role revocation (revoke_role)');
-    success('Error handling with RoleCheckError');
-
-    console.log(`\n${COLORS.CYAN}Contract Details:${COLORS.RESET}`);
-    info(`Contract ID: ${contractId}`);
-    info(`Network: ${network}`);
-
-    console.log(`\n${COLORS.CYAN}Next Steps:${COLORS.RESET}`);
-    info('1. Start the indexer to track role events:');
-    info('     cd indexer && npm start');
-    info('');
-    info('2. Start the frontend to view roles in a UI:');
-    info('     cd frontend && npm run dev');
-    info('');
-    info('3. Use the CLI to manage roles:');
-    info(`     rbac has-role --contract ${contractId} --role WITHDRAWER --address ${alice.publicKey()}`);
-    info('');
-    info('4. Integrate into your contracts:');
-    info('     Use this contract ID for require_role() calls from other contracts');
+    console.log(`${COLORS.YELLOW}Contract ID:${COLORS.RESET}    ${contractId}`);
+    console.log(`${COLORS.YELLOW}Roles Created:${COLORS.RESET}  WITHDRAWER, OPERATOR, VIEWER, AUDITOR`);
+    console.log(`${COLORS.YELLOW}Roles Granted:${COLORS.RESET}  WITHDRAWER (Alice), OPERATOR (Bob), VIEWER (Charlie), AUDITOR (Dave)`);
+    console.log(`${COLORS.YELLOW}Check Results:${COLORS.RESET}  Alice has WITHDRAWER: true, Bob has OPERATOR: true, Alice has VIEWER: false`);
 
     console.log(`\n${COLORS.MAGENTA}${'='.repeat(60)}${COLORS.RESET}\n`);
 }

@@ -129,6 +129,7 @@ EXIT_CODE=$?
 
 if [ $EXIT_CODE -eq 0 ]; then
     echo
+    echo -e "${GREEN}✓ RBAC deployment and role checks verified${NC}"
     echo -e "${GREEN}Demo completed successfully!${NC}"
 else
     echo

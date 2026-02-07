@@ -12,7 +12,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Copy, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react'
-import { DeploymentForm } from '@/components/deployment-form'
 import { useState as useStateHook } from 'react'
 
 type DeploymentState = 'idle' | 'loading' | 'success' | 'error'
