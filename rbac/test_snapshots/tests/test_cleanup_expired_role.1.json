@@ -21,7 +21,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "symbol": "REVOKE"
+                  "symbol": "CLEANUP"
                 },
                 {
                   "symbol": "DEF_ADMIN"
@@ -46,13 +46,13 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "symbol": "REVOKE"
+                  "symbol": "CLEANUP"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                 },
                 {
-                  "u64": "0"
+                  "u64": "1500"
                 }
               ]
             }
@@ -62,37 +62,13 @@
       ]
     ],
     [],
-    [
-      [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-        {
-          "function": {
-            "contract_fn": {
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "revoke_role",
-              "args": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                },
-                {
-                  "symbol": "REVOKE"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                }
-              ]
-            }
-          },
-          "sub_invocations": []
-        }
-      ]
-    ],
+    [],
     []
   ],
   "ledger": {
     "protocol_version": 25,
     "sequence_number": 0,
-    "timestamp": 0,
+    "timestamp": 1501,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
     "base_reserve": 0,
     "min_persistent_entry_ttl": 4096,
@@ -160,7 +136,7 @@
                     "symbol": "RoleAdmin"
                   },
                   {
-                    "symbol": "DEF_ADMIN"
+                    "symbol": "CLEANUP"
                   }
                 ]
               },
@@ -187,7 +163,7 @@
                     "symbol": "RoleAdmin"
                   },
                   {
-                    "symbol": "REVOKE"
+                    "symbol": "DEF_ADMIN"
                   }
                 ]
               },
@@ -214,7 +190,7 @@
                     "symbol": "RoleExists"
                   },
                   {
-                    "symbol": "DEF_ADMIN"
+                    "symbol": "CLEANUP"
                   }
                 ]
               },
@@ -241,7 +217,7 @@
                     "symbol": "RoleExists"
                   },
                   {
-                    "symbol": "REVOKE"
+                    "symbol": "DEF_ADMIN"
                   }
                 ]
               },
@@ -348,26 +324,6 @@
               "key": {
                 "ledger_key_nonce": {
                   "nonce": "801925984706572462"
-                }
-              },
-              "durability": "temporary",
-              "val": "void"
-            }
-          },
-          "ext": "v0"
-        },
-        "live_until": 6311999
-      },
-      {
-        "entry": {
-          "last_modified_ledger_seq": 0,
-          "data": {
-            "contract_data": {
-              "ext": "v0",
-              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-              "key": {
-                "ledger_key_nonce": {
-                  "nonce": "1033654523790656264"
                 }
               },
               "durability": "temporary",

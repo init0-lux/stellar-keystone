@@ -16,4 +16,6 @@ pub enum RbacError {
     NotMember = 4,
     /// role already exists
     RoleAlreadyExists = 5,
+    /// cannot set role as its own admin (except DEFAULT_ADMIN_ROLE)
+    InvalidSelfAdmin = 6,
 }

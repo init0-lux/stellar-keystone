@@ -40,13 +40,19 @@ mod storage;
 pub use errors::RbacError;
 pub use storage::DataKey;
 
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, Symbol};
 
 /// The default admin role symbol with supreme authority over all roles.
 ///
-/// **Important:** The on-chain symbol is `"DEF_ADMIN"` (9 char limit for `symbol_short!`).
-/// Frontends should use the `default_admin_role()` getter rather than hardcoding.
-/// This should be assigned to a multisig or timelock in production.
+/// # Important
+/// - **Reserved role:** `DEFAULT_ADMIN_ROLE` must always exist and cannot be deleted.
+/// - The on-chain symbol is `"DEF_ADMIN"` (9 char limit for `symbol_short!`).
+/// - Frontends should use the `default_admin_role()` getter rather than hardcoding.
+/// - This should be assigned to a multisig or timelock in production.
+///
+/// # Warning
+/// If all `DEFAULT_ADMIN_ROLE` holders revoke themselves, the contract becomes
+/// administratively frozen — no new roles can be created, no admins can be changed.
 pub const DEFAULT_ADMIN_ROLE: Symbol = symbol_short!("DEF_ADMIN");
 
 #[contract]
@@ -54,37 +60,50 @@ pub struct RbacContract;
 
 #[contractimpl]
 impl RbacContract {
-    /// initialize the RBAC contract.
+    /// Initialize the RBAC contract.
     /// Sets the deployer as the initial holder of DEFAULT_ADMIN_ROLE.
     ///
-    /// admin - The address to grant DEFAULT_ADMIN_ROLE to
+    /// # Arguments
+    /// * `admin` - The address to grant DEFAULT_ADMIN_ROLE to
+    ///
+    /// # Panics
+    /// Panics if the contract is already initialized.
+    ///
+    /// # Note
+    /// - Sets `Initialized` flag first (atomicity guarantee)
+    /// - Stores `RoleExists(DEFAULT_ADMIN_ROLE)` to encode the invariant structurally
     pub fn initialize(env: Env, admin: Address) {
-        // ensure not already initialized
-        if env.storage().instance().has(&DataKey::Deployer) {
+        // Ensure not already initialized (use persistent storage)
+        if env.storage().persistent().has(&DataKey::Initialized) {
             panic!("Already initialized");
         }
 
-        // Store deployer for lint checks
-        env.storage().instance().set(&DataKey::Deployer, &admin);
+        // Set initialized FIRST (atomicity: any failure after this is visible)
+        env.storage().persistent().set(&DataKey::Initialized, &true);
 
-        // Grant DEFAULT_ADMIN_ROLE to admin
+        // Store deployer in persistent storage
+        env.storage().persistent().set(&DataKey::Deployer, &admin);
+
+        // Setup DEFAULT_ADMIN_ROLE
         let role = DEFAULT_ADMIN_ROLE;
+
+        // Mark role as existing (structural invariant)
+        env.storage()
+            .persistent()
+            .set(&DataKey::RoleExists(role.clone()), &true);
+
+        // Set role admin (self-admin for DEFAULT_ADMIN_ROLE)
+        env.storage()
+            .persistent()
+            .set(&DataKey::RoleAdmin(role.clone()), &role);
+
+        // Grant membership to admin
         env.storage()
             .persistent()
             .set(&DataKey::RoleMember(role.clone(), admin.clone()), &true);
         env.storage()
             .persistent()
             .set(&DataKey::RoleExpiry(role.clone(), admin.clone()), &0u64);
-
-        // Create the DEFAULT_ADMIN_ROLE with itself as admin
-        env.storage()
-            .persistent()
-            .set(&DataKey::RoleAdmin(role.clone()), &role);
-
-        // Initialize roles list
-        let mut roles: Vec<Symbol> = Vec::new(&env);
-        roles.push_back(role.clone());
-        env.storage().instance().set(&DataKey::AllRoles, &roles);
 
         // Emit events
         events::role_created(&env, role.clone(), role.clone());
@@ -101,7 +120,7 @@ impl RbacContract {
     /// * `env` - The Soroban environment
     /// * `caller` - The address invoking this function (must have DEFAULT_ADMIN_ROLE)
     /// * `role` - The role symbol to create
-    /// * `admin_role` - The role that administers this new role
+    /// * `admin_role` - The role that administers this new role (must exist)
     ///
     /// # Authorization
     /// Caller must have DEFAULT_ADMIN_ROLE to create new roles.
@@ -109,28 +128,43 @@ impl RbacContract {
     /// # Errors
     /// - `RoleAlreadyExists` if the role already exists
     /// - `NotAuthorized` if caller lacks DEFAULT_ADMIN_ROLE
+    /// - `RoleNotFound` if admin_role does not exist
+    /// - `InvalidSelfAdmin` if role == admin_role (except DEFAULT_ADMIN_ROLE)
+    ///
+    /// # Note
+    /// Roles are immutable once created. There is no `delete_role` function.
     pub fn create_role(env: Env, caller: Address, role: Symbol, admin_role: Symbol) -> Result<(), RbacError> {
         // Authorize caller
         Self::internal_require_role(&env, DEFAULT_ADMIN_ROLE, &caller)?;
 
         // Reject if role already exists (strict create-only semantics)
-        if env.storage().persistent().has(&DataKey::RoleAdmin(role.clone())) {
+        if env.storage().persistent().has(&DataKey::RoleExists(role.clone())) {
             return Err(RbacError::RoleAlreadyExists);
         }
+
+        // Corruption check: RoleAdmin should not exist without RoleExists
+        if env.storage().persistent().has(&DataKey::RoleAdmin(role.clone())) {
+            // This should never happen — indicates corrupted state
+            panic!("Corrupted state: RoleAdmin exists without RoleExists");
+        }
+
+        // Validate admin_role exists
+        Self::require_role_exists(&env, &admin_role)?;
+
+        // Disallow self-admin unless it's DEFAULT_ADMIN_ROLE
+        if role == admin_role && role != DEFAULT_ADMIN_ROLE {
+            return Err(RbacError::InvalidSelfAdmin);
+        }
+
+        // Mark role as existing
+        env.storage()
+            .persistent()
+            .set(&DataKey::RoleExists(role.clone()), &true);
 
         // Store role admin mapping
         env.storage()
             .persistent()
             .set(&DataKey::RoleAdmin(role.clone()), &admin_role);
-
-        // Add to roles list
-        let mut roles: Vec<Symbol> = env
-            .storage()
-            .instance()
-            .get(&DataKey::AllRoles)
-            .unwrap_or(Vec::new(&env));
-        roles.push_back(role.clone());
-        env.storage().instance().set(&DataKey::AllRoles, &roles);
 
         // Emit event
         events::role_created(&env, role, admin_role);
@@ -142,14 +176,29 @@ impl RbacContract {
     /// # Arguments
     /// * `env` - The Soroban environment
     /// * `caller` - The address invoking this function (must have DEFAULT_ADMIN_ROLE)
-    /// * `role` - The role to modify
-    /// * `admin_role` - The new admin role
+    /// * `role` - The role to modify (must exist)
+    /// * `admin_role` - The new admin role (must exist)
     ///
     /// # Authorization
     /// Only callable by account with DEFAULT_ADMIN_ROLE.
+    ///
+    /// # Errors
+    /// - `RoleNotFound` if role or admin_role does not exist
+    /// - `InvalidSelfAdmin` if role == admin_role (except DEFAULT_ADMIN_ROLE)
     pub fn set_role_admin(env: Env, caller: Address, role: Symbol, admin_role: Symbol) -> Result<(), RbacError> {
         // Only DEFAULT_ADMIN_ROLE can change role admins
         Self::internal_require_role(&env, DEFAULT_ADMIN_ROLE, &caller)?;
+
+        // Validate role exists
+        Self::require_role_exists(&env, &role)?;
+
+        // Validate admin_role exists
+        Self::require_role_exists(&env, &admin_role)?;
+
+        // Disallow self-admin unless it's DEFAULT_ADMIN_ROLE
+        if role == admin_role && role != DEFAULT_ADMIN_ROLE {
+            return Err(RbacError::InvalidSelfAdmin);
+        }
 
         // Get previous admin for event
         let previous_admin: Symbol = env
@@ -177,7 +226,7 @@ impl RbacContract {
     /// # Arguments
     /// * `env` - The Soroban environment
     /// * `caller` - The address invoking this function (must have admin role for this role)
-    /// * `role` - The role to grant
+    /// * `role` - The role to grant (must exist)
     /// * `account` - The address to grant the role to
     /// * `expiry` - Unix timestamp when role expires (0 = never)
     ///
@@ -185,6 +234,7 @@ impl RbacContract {
     /// Caller must have the admin role for this role.
     ///
     /// # Errors
+    /// - `RoleNotFound` if role does not exist
     /// - `InvalidExpiry` if expiry is non-zero and in the past
     pub fn grant_role(
         env: Env,
@@ -193,6 +243,9 @@ impl RbacContract {
         account: Address,
         expiry: u64,
     ) -> Result<(), RbacError> {
+        // Validate role exists
+        Self::require_role_exists(&env, &role)?;
+
         // Get admin role for this role
         let admin_role: Symbol = env
             .storage()
@@ -203,7 +256,8 @@ impl RbacContract {
         // Caller must have admin role — caller is the granter
         Self::internal_require_role(&env, admin_role, &caller)?;
 
-        // Validate expiry: if non-zero, must be in the future
+        // Validate expiry: if non-zero, must be in the future (exclusive semantics)
+        // Role valid while current_time < expiry, so expiry must be > current_time
         if expiry != 0 {
             let current_time = env.ledger().timestamp();
             if expiry <= current_time {
@@ -232,12 +286,18 @@ impl RbacContract {
     /// # Arguments
     /// * `env` - The Soroban environment
     /// * `caller` - The address invoking this function (must have admin role for this role)
-    /// * `role` - The role to revoke
+    /// * `role` - The role to revoke (must exist)
     /// * `account` - The address to revoke the role from
     ///
     /// # Authorization
     /// Caller must have the admin role for this role.
+    ///
+    /// # Errors
+    /// - `RoleNotFound` if role does not exist
     pub fn revoke_role(env: Env, caller: Address, role: Symbol, account: Address) -> Result<(), RbacError> {
+        // Validate role exists
+        Self::require_role_exists(&env, &role)?;
+
         // Get admin role for this role
         let admin_role: Symbol = env
             .storage()
@@ -266,7 +326,7 @@ impl RbacContract {
     // Role Checks
     // =========================================================================
 
-    /// Check if an account has a specific role.
+    /// Check if an account has a specific role (pure, no state mutation).
     ///
     /// # Arguments
     /// * `env` - The Soroban environment
@@ -277,7 +337,7 @@ impl RbacContract {
     /// `true` if the account has the role and it hasn't expired, `false` otherwise.
     ///
     /// # Note
-    /// If a role is found to be expired, this function will emit a `RoleExpired` event.
+    /// This is a pure read function. Use `cleanup_expired_role` to remove expired grants.
     pub fn has_role(env: Env, role: Symbol, account: Address) -> bool {
         // Check membership
         let is_member: bool = env
@@ -302,10 +362,50 @@ impl RbacContract {
             return true;
         }
 
-        // Check against ledger timestamp
+        // Expiry is exclusive: role valid while current_time < expiry
+        env.ledger().timestamp() < expiry
+    }
+
+    /// Cleanup an expired role grant, removing it from storage.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban environment
+    /// * `role` - The role to check
+    /// * `account` - The address to check
+    ///
+    /// # Returns
+    /// `true` if the role was expired and cleaned up, `false` if still valid or not a member.
+    ///
+    /// # Note
+    /// Emits `RoleExpired` event if the role was expired and removed.
+    pub fn cleanup_expired_role(env: Env, role: Symbol, account: Address) -> bool {
+        // Check membership
+        let is_member: bool = env
+            .storage()
+            .persistent()
+            .get(&DataKey::RoleMember(role.clone(), account.clone()))
+            .unwrap_or(false);
+
+        if !is_member {
+            return false;
+        }
+
+        // Check expiry
+        let expiry: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::RoleExpiry(role.clone(), account.clone()))
+            .unwrap_or(0);
+
+        // 0 means never expires
+        if expiry == 0 {
+            return false;
+        }
+
+        // Check if expired (same semantics: current_time >= expiry means expired)
         let current_time = env.ledger().timestamp();
-        if current_time > expiry {
-            // Clean up expired membership (lazy revocation)
+        if current_time >= expiry {
+            // Clean up expired membership
             env.storage()
                 .persistent()
                 .remove(&DataKey::RoleMember(role.clone(), account.clone()));
@@ -313,23 +413,26 @@ impl RbacContract {
                 .persistent()
                 .remove(&DataKey::RoleExpiry(role.clone(), account.clone()));
 
-            // Emit expiry event once (storage is now cleared)
+            // Emit expiry event
             events::role_expired(&env, role, account, expiry);
-            return false;
+            return true;
         }
 
-        true
+        false
     }
 
-    /// Require that an account has a specific role, panic if not.
+    /// Check if an account has a specific role, returning an error if not.
     ///
     /// # Arguments
     /// * `env` - The Soroban environment
     /// * `role` - The role to require
     /// * `account` - The address to check
     ///
-    /// # Panics
-    /// Panics with `NotAuthorized` error if the account doesn't have the role.
+    /// # Returns
+    /// `Ok(())` if the account has the role, `Err(NotAuthorized)` otherwise.
+    ///
+    /// # Note
+    /// When called via the generated client, the error will cause a panic.
     pub fn require_role(env: Env, role: Symbol, account: Address) -> Result<(), RbacError> {
         if !Self::has_role(env, role, account) {
             return Err(RbacError::NotAuthorized);
@@ -355,7 +458,7 @@ impl RbacContract {
     /// Get the admin role for a role.
     ///
     /// # Returns
-    /// The admin role symbol.
+    /// The admin role symbol, or DEFAULT_ADMIN_ROLE if role doesn't exist.
     pub fn get_role_admin(env: Env, role: Symbol) -> Symbol {
         env.storage()
             .persistent()
@@ -363,20 +466,20 @@ impl RbacContract {
             .unwrap_or(DEFAULT_ADMIN_ROLE)
     }
 
-    /// List all created roles.
+    /// Check if a role exists.
     ///
-    /// # Note
-    /// For production use with many roles, prefer using the indexer.
-    pub fn list_roles(env: Env) -> Vec<Symbol> {
-        env.storage()
-            .instance()
-            .get(&DataKey::AllRoles)
-            .unwrap_or(Vec::new(&env))
+    /// # Returns
+    /// `true` if the role has been created, `false` otherwise.
+    pub fn role_exists(env: Env, role: Symbol) -> bool {
+        env.storage().persistent().has(&DataKey::RoleExists(role))
     }
 
-    /// Get the deployer address (for lint checks).
+    /// Get the deployer address.
+    ///
+    /// # Note
+    /// Returns the address that initialized the contract.
     pub fn get_deployer(env: Env) -> Option<Address> {
-        env.storage().instance().get(&DataKey::Deployer)
+        env.storage().persistent().get(&DataKey::Deployer)
     }
 
     /// Get the DEFAULT_ADMIN_ROLE symbol.
@@ -387,6 +490,17 @@ impl RbacContract {
     // =========================================================================
     // Internal Helpers
     // =========================================================================
+
+    /// Check that a role exists.
+    ///
+    /// # Returns
+    /// `Ok(())` if role exists, `Err(RoleNotFound)` otherwise.
+    fn require_role_exists(env: &Env, role: &Symbol) -> Result<(), RbacError> {
+        if !env.storage().persistent().has(&DataKey::RoleExists(role.clone())) {
+            return Err(RbacError::RoleNotFound);
+        }
+        Ok(())
+    }
 
     /// Internal function to verify caller has a required role.
     /// 
@@ -459,9 +573,8 @@ mod tests {
         let stored_admin = client.get_role_admin(&role);
         assert_eq!(stored_admin, admin_role);
 
-        // Verify role is in list
-        let roles = client.list_roles();
-        assert!(roles.iter().any(|r| r == role));
+        // Verify role exists
+        assert!(client.role_exists(&role));
     }
 
     #[test]
@@ -615,5 +728,142 @@ mod tests {
         // Try to grant with expiry in the past - should fail
         let result = client.try_grant_role(&admin, &role, &account, &1000);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_role_with_nonexistent_admin() {
+        let (_env, admin, client) = setup_env();
+
+        let role = symbol_short!("NEW_ROLE");
+        let ghost_admin = symbol_short!("GHOST"); // Does not exist
+
+        // Should fail with RoleNotFound
+        let result = client.try_create_role(&admin, &role, &ghost_admin);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_set_role_admin_to_nonexistent() {
+        let (_env, admin, client) = setup_env();
+
+        let role = symbol_short!("ROLE1");
+        let admin_role = client.default_admin_role();
+        client.create_role(&admin, &role, &admin_role);
+
+        let ghost_admin = symbol_short!("GHOST"); // Does not exist
+
+        // Should fail with RoleNotFound
+        let result = client.try_set_role_admin(&admin, &role, &ghost_admin);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_self_admin_rejected() {
+        let (_env, admin, client) = setup_env();
+
+        let role = symbol_short!("SELFISH");
+
+        // Try to create role with itself as admin - should fail
+        let result = client.try_create_role(&admin, &role, &role);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cleanup_expired_role() {
+        let (env, admin, client) = setup_env();
+
+        // Set up initial ledger time
+        let initial_time = 1000u64;
+        env.ledger().with_mut(|li| {
+            li.timestamp = initial_time;
+        });
+
+        let role = symbol_short!("CLEANUP");
+        let admin_role = client.default_admin_role();
+        client.create_role(&admin, &role, &admin_role);
+
+        let account = Address::generate(&env);
+        let expiry = initial_time + 500;
+        client.grant_role(&admin, &role, &account, &expiry);
+
+        // Before expiry: cleanup should return false
+        assert!(!client.cleanup_expired_role(&role, &account));
+
+        // Advance time past expiry
+        env.ledger().with_mut(|li| {
+            li.timestamp = expiry + 1;
+        });
+
+        // After expiry: cleanup should return true and remove membership
+        assert!(client.cleanup_expired_role(&role, &account));
+
+        // Second cleanup should return false (already cleaned)
+        assert!(!client.cleanup_expired_role(&role, &account));
+    }
+
+    #[test]
+    fn test_has_role_is_pure_no_side_effects() {
+        let (env, admin, client) = setup_env();
+
+        // Set up initial ledger time
+        let initial_time = 1000u64;
+        env.ledger().with_mut(|li| {
+            li.timestamp = initial_time;
+        });
+
+        let role = symbol_short!("PURE");
+        let admin_role = client.default_admin_role();
+        client.create_role(&admin, &role, &admin_role);
+
+        let account = Address::generate(&env);
+        let expiry = initial_time + 500;
+        client.grant_role(&admin, &role, &account, &expiry);
+
+        // Advance time past expiry
+        env.ledger().with_mut(|li| {
+            li.timestamp = expiry + 1;
+        });
+
+        // Call has_role twice - should return false both times
+        assert!(!client.has_role(&role, &account));
+        assert!(!client.has_role(&role, &account));
+
+        // Membership should still exist (has_role is pure, no cleanup)
+        // Verify by checking expiry (would be 0 if cleaned)
+        let stored_expiry = client.get_role_expiry(&role, &account);
+        assert_eq!(stored_expiry, expiry); // Still stored, not cleaned
+    }
+
+    #[test]
+    fn test_grant_role_nonexistent_role() {
+        let (env, admin, client) = setup_env();
+
+        let ghost_role = symbol_short!("GHOST"); // Never created
+        let account = Address::generate(&env);
+
+        // Should fail with RoleNotFound
+        let result = client.try_grant_role(&admin, &ghost_role, &account, &0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_revoke_role_nonexistent_role() {
+        let (env, admin, client) = setup_env();
+
+        let ghost_role = symbol_short!("GHOST"); // Never created
+        let account = Address::generate(&env);
+
+        // Should fail with RoleNotFound
+        let result = client.try_revoke_role(&admin, &ghost_role, &account);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_default_admin_role_exists_after_init() {
+        let (_env, _admin, client) = setup_env();
+
+        // DEFAULT_ADMIN_ROLE should exist after initialization
+        let default_admin = client.default_admin_role();
+        assert!(client.role_exists(&default_admin));
     }
 }
