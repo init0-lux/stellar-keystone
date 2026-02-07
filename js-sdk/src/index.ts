@@ -29,7 +29,10 @@ import {
     nativeToScVal,
     Address,
     scValToNative,
+    hash,
 } from '@stellar/stellar-sdk';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 
 // =============================================================================
 // Types
@@ -187,7 +190,39 @@ async function submitTransaction(
 // =============================================================================
 
 /**
+ * Load the compiled RBAC WASM file.
+ */
+function loadRbacWasm(): Buffer {
+    // Try multiple potential paths for the WASM file
+    const possiblePaths = [
+        resolve(__dirname, '../../rbac/target/wasm32-unknown-unknown/release/stellar_keystone_rbac.wasm'),
+        resolve(process.cwd(), 'rbac/target/wasm32-unknown-unknown/release/stellar_keystone_rbac.wasm'),
+        resolve(__dirname, '../../../rbac/target/wasm32-unknown-unknown/release/stellar_keystone_rbac.wasm'),
+    ];
+
+    for (const wasmPath of possiblePaths) {
+        try {
+            return readFileSync(wasmPath);
+        } catch (e) {
+            // Try next path
+            continue;
+        }
+    }
+
+    throw new Error(
+        'RBAC WASM file not found. Please compile the contract first:\n' +
+        '  cd rbac && cargo build --target wasm32-unknown-unknown --release'
+    );
+}
+
+/**
  * Deploy a new RBAC contract.
+ *
+ * This function:
+ * 1. Loads the compiled RBAC WASM binary
+ * 2. Uploads the WASM to the network
+ * 3. Creates a contract instance from the uploaded WASM
+ * 4. Initializes the contract with the signer as default admin
  *
  * @param network - Network to deploy to ('local' or 'testnet')
  * @param signerKey - Secret key for signing the deployment transaction
@@ -208,34 +243,109 @@ export async function deployRbac(
     const keypair = getKeypairFromSecret(signerKey);
     const publicKey = keypair.publicKey();
 
-    // Get account info
-    const account = await server.getAccount(publicKey);
-
-    // Note: In a real implementation, you would:
-    // 1. Have the WASM binary available
-    // 2. Upload the WASM if not already uploaded
-    // 3. Create the contract instance
-    //
-    // For this demo, we simulate the deployment process.
-    // The actual WASM would be compiled from the Rust contract.
-
-    // Create a placeholder contract ID for demo purposes
-    // In production, this would come from the actual deployment
-    const contractId = `C${'A'.repeat(55)}`; // Placeholder contract ID
-
     console.log(`[SDK] Deploying RBAC contract to ${network}...`);
     console.log(`[SDK] Signer: ${publicKey}`);
 
-    // In a real deployment, we would:
-    // 1. Upload WASM: Operation.uploadContractWasm({ wasm: wasmBuffer })
-    // 2. Create contract: Operation.createContractFromAddress(...)
-    // 3. Initialize: Call the initialize function
+    // Step 1: Load WASM
+    console.log('[SDK] Loading WASM binary...');
+    const wasmBuffer = loadRbacWasm();
+    console.log(`[SDK] WASM loaded: ${wasmBuffer.length} bytes`);
 
-    // For demo, return simulated result
+    // Step 2: Upload WASM
+    console.log('[SDK] Uploading WASM to network...');
+    const account = await server.getAccount(publicKey);
+
+    const uploadTxBuilder = new TransactionBuilder(account, {
+        fee: '100000',
+        networkPassphrase: config.passphrase,
+    })
+        .addOperation(Operation.uploadContractWasm({ wasm: wasmBuffer }))
+        .setTimeout(TX_TIMEOUT);
+
+    const { hash: uploadTxHash } = await submitTransaction(server, uploadTxBuilder, keypair);
+    console.log(`[SDK] WASM uploaded: ${uploadTxHash}`);
+
+    // Compute WASM hash for contract creation
+    const wasmHash = hash(wasmBuffer);
+
+    // Step 3: Create contract from uploaded WASM
+    console.log('[SDK] Creating contract instance...');
+
+    // Refresh account sequence number
+    const account2 = await server.getAccount(publicKey);
+
+    const createTxBuilder = new TransactionBuilder(account2, {
+        fee: '100000',
+        networkPassphrase: config.passphrase,
+    })
+        .addOperation(
+            Operation.createCustomContract({
+                wasmHash,
+                address: new Address(publicKey),
+            })
+        )
+        .setTimeout(TX_TIMEOUT);
+
+    const { hash: createTxHash, result: createResult } = await submitTransaction(
+        server,
+        createTxBuilder,
+        keypair
+    );
+
+    // Extract contract ID from result
+    const contractId = extractContractId(createResult);
+    console.log(`[SDK] Contract created: ${contractId}`);
+
+    // Step 4: Initialize the contract
+    console.log('[SDK] Initializing contract...');
+
+    // Refresh account again
+    const account3 = await server.getAccount(publicKey);
+
+    const contract = new Contract(contractId);
+    const initTxBuilder = new TransactionBuilder(account3, {
+        fee: '100000',
+        networkPassphrase: config.passphrase,
+    })
+        .addOperation(
+            contract.call(
+                'initialize',
+                new Address(publicKey).toScVal()
+            )
+        )
+        .setTimeout(TX_TIMEOUT);
+
+    const { hash: initTxHash } = await submitTransaction(server, initTxBuilder, keypair);
+    console.log(`[SDK] Contract initialized: ${initTxHash}`);
+    console.log(`[SDK] ✅ Deployment complete!`);
+
     return {
         contractId,
-        txHash: 'simulated_tx_hash_' + Date.now().toString(16),
+        txHash: initTxHash,
     };
+}
+
+/**
+ * Extract contract ID from a createCustomContract transaction result.
+ */
+function extractContractId(result: SorobanRpc.Api.GetTransactionResponse): string {
+    if (result.status !== 'SUCCESS') {
+        throw new Error('Transaction was not successful');
+    }
+
+    // The contract ID is in the return value
+    const returnValue = result.returnValue;
+    if (!returnValue) {
+        throw new Error('No return value in transaction result');
+    }
+
+    // Contract ID is returned as an Address ScVal
+    try {
+        const contractAddress = Address.fromScVal(returnValue);
+        return contractAddress.toString();
+    } catch (error) {
+        throw new Error(`Could not extract contract ID: ${error}`);
+    }
 }
 
 /**

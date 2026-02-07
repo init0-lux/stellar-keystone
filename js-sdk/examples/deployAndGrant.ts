@@ -1,121 +1,135 @@
 /**
- * Example: Deploy and Grant Role
- *
- * This example demonstrates deploying an RBAC contract and granting a role.
- *
- * @usage
- * ```bash
- * # Set environment variables
- * export SIGNER_KEY="S..."  # Your Stellar secret key
- *
- * # Run the example
- * npx ts-node examples/deployAndGrant.ts
- * ```
+ * Example: Deploy RBAC Contract and Grant a Role
+ * 
+ * This example demonstrates:
+ * 1. Deploying the RBAC contract
+ * 2. Creating a custom role  
+ * 3. Granting the role to an address
+ * 4. Checking if the address has the role
+ * 
+ * Usage:
+ *   # Compile the contract first
+ *   cd rbac && cargo build --target wasm32-unknown-unknown --release && cd ..
+ * 
+ *   # Set environment variable
+ *   export SIGNER_SECRET=S...  # Your Stellar secret key
+ * 
+ *   # Run on local network (requires stellar network start local)
+ *   npx ts-node examples/deployAndGrant.ts local
+ * 
+ *   # Or run on testnet (requires funded account)
+ *   npx ts-node examples/deployAndGrant.ts testnet
  */
 
-import { deployRbac, createRole, grantRole, hasRole, revokeRole } from '../src/index.js';
-
-// Configuration from environment
-const SIGNER_KEY = process.env.SIGNER_KEY;
-const NETWORK = (process.env.NETWORK as 'local' | 'testnet') || 'testnet';
-
-// Test account address (replace with actual address)
-const TEST_ACCOUNT = process.env.TEST_ACCOUNT || 'GDEMO...';
+import { deployRbac, createRole, grantRole, hasRole, NetworkType } from '../src/index';
+import { Keypair } from '@stellar/stellar-sdk';
 
 async function main() {
-    console.log('========================================');
-    console.log('Stellar Keystone RBAC - Deploy & Grant Example');
-    console.log('========================================\n');
+    // Get network from command line (default: local)
+    const network = (process.argv[2] as NetworkType) || 'local';
 
-    // Validate environment
-    if (!SIGNER_KEY) {
-        console.error('Error: SIGNER_KEY environment variable is required');
-        console.log('Usage: SIGNER_KEY=S... npx ts-node examples/deployAndGrant.ts');
+    // Get signer key from environment
+    const signerSecret = process.env.SIGNER_SECRET;
+    if (!signerSecret) {
+        console.error('Error: SIGNER_SECRET environment variable not set');
+        console.error('Usage: SIGNER_SECRET=S... npx ts-node examples/deployAndGrant.ts [local|testnet]');
         process.exit(1);
     }
 
     try {
-        // Step 1: Deploy RBAC contract
-        console.log('Step 1: Deploying RBAC contract...');
-        const { contractId, txHash: deployTxHash } = await deployRbac(NETWORK, SIGNER_KEY);
-        console.log(`  Contract ID: ${contractId}`);
-        console.log(`  TX Hash: ${deployTxHash}\n`);
+        const signer = Keypair.fromSecret(signerSecret);
+        console.log(`\n🚀 Starting RBAC Deployment Example`);
+        console.log(`Network: ${network}`);
+        console.log(`Signer: ${signer.publicKey()}\n`);
 
-        // Step 2: Create WITHDRAWER role
-        console.log('Step 2: Creating WITHDRAWER role...');
-        const createRoleTxHash = await createRole(
+        // Step 1: Deploy RBAC Contract
+        console.log('═'.repeat(60));
+        console.log('Step 1: Deploying RBAC Contract');
+        console.log('═'.repeat(60));
+        const startTime = Date.now();
+
+        const { contractId, txHash } = await deployRbac(network, signerSecret);
+
+        const deployTime = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.log(`\n✅ Deployment complete in ${deployTime}s`);
+        console.log(`   Contract ID: ${contractId}`);
+        console.log(`   TX Hash: ${txHash}\n`);
+
+        // Step 2: Create a custom role
+        console.log('═'.repeat(60));
+        console.log('Step 2: Creating WITHDRAWER Role');
+        console.log('═'.repeat(60));
+
+        const createRoleTx = await createRole(
             contractId,
             'WITHDRAWER',
-            'DEF_ADMIN', // Admin role from contract
-            SIGNER_KEY,
-            NETWORK
+            'DEF_ADMIN',  // Administered by DEFAULT_ADMIN_ROLE
+            signerSecret,
+            network
         );
-        console.log(`  TX Hash: ${createRoleTxHash}\n`);
 
-        // Step 3: Grant role to test account
-        console.log(`Step 3: Granting WITHDRAWER role to ${TEST_ACCOUNT}...`);
-        const grantTxHash = await grantRole(
+        console.log(`\n✅ Role created`);
+        console.log(`   TX Hash: ${createRoleTx}\n`);
+
+        // Step 3: Grant the role to a test address
+        console.log('═'.repeat(60));
+        console.log('Step 3: Granting WITHDRAWER Role');
+        console.log('═'.repeat(60));
+
+        // Generate a test address
+        const testUser = Keypair.random();
+        console.log(`   Test User: ${testUser.publicKey()}`);
+
+        // Grant role with 1-year expiry
+        const expiryDate = new Date();
+        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+
+        const grantTx = await grantRole(
             contractId,
             'WITHDRAWER',
-            TEST_ACCOUNT,
-            undefined, // No expiry
-            SIGNER_KEY,
-            NETWORK
+            testUser.publicKey(),
+            expiryDate.toISOString(),
+            signerSecret,
+            network
         );
-        console.log(`  TX Hash: ${grantTxHash}\n`);
 
-        // Step 4: Verify role
-        console.log('Step 4: Verifying role assignment...');
-        const hasWithdrawer = await hasRole(contractId, 'WITHDRAWER', TEST_ACCOUNT, NETWORK);
-        console.log(`  Has WITHDRAWER role: ${hasWithdrawer}\n`);
+        console.log(`\n✅ Role granted`);
+        console.log(`   Expiry: ${expiryDate.toISOString()}`);
+        console.log(`   TX Hash: ${grantTx}\n`);
 
-        // Step 5: Grant with expiry (example)
-        console.log('Step 5: Granting role with expiry...');
-        const futureDate = new Date();
-        futureDate.setDate(futureDate.getDate() + 30); // 30 days from now
-        const expiryIso = futureDate.toISOString();
+        // Step 4: Verify the role grant
+        console.log('═'.repeat(60));
+        console.log('Step 4: Verifying Role Grant');
+        console.log('═'.repeat(60));
 
-        const grantWithExpiryTxHash = await grantRole(
+        const hasWit hdrawerRole = await hasRole(
             contractId,
             'WITHDRAWER',
-            'GTEMP...', // Another test address
-            expiryIso,
-            SIGNER_KEY,
-            NETWORK
+            testUser.publicKey()
         );
-        console.log(`  TX Hash: ${grantWithExpiryTxHash}`);
-        console.log(`  Expires: ${expiryIso}\n`);
 
-        // Step 6: Revoke role (optional)
-        console.log('Step 6: Revoking role (demo)...');
-        const revokeTxHash = await revokeRole(
-            contractId,
-            'WITHDRAWER',
-            TEST_ACCOUNT,
-            SIGNER_KEY,
-            NETWORK
-        );
-        console.log(`  TX Hash: ${revokeTxHash}\n`);
-
-        // Step 7: Verify revocation
-        console.log('Step 7: Verifying role revocation...');
-        const hasAfterRevoke = await hasRole(contractId, 'WITHDRAWER', TEST_ACCOUNT, NETWORK);
-        console.log(`  Has WITHDRAWER role after revoke: ${hasAfterRevoke}\n`);
+        if (hasWithdrawerRole) {
+            console.log(`\n✅ Verification passed`);
+            console.log(`   ${testUser.publicKey().substring(0, 10)}... has WITHDRAWER role\n`);
+        } else {
+            console.log(`\n❌ Verification failed`);
+            console.log(`   ${testUser.publicKey().substring(0, 10)}... does NOT have WITHDRAWER role\n`);
+        }
 
         // Summary
-        console.log('========================================');
-        console.log('Summary');
-        console.log('========================================');
-        console.log(`Contract ID: ${contractId}`);
-        console.log(`Network: ${NETWORK}`);
-        console.log(`Transactions:`);
-        console.log(`  - Deploy: ${deployTxHash}`);
-        console.log(`  - Create Role: ${createRoleTxHash}`);
-        console.log(`  - Grant: ${grantTxHash}`);
-        console.log(`  - Revoke: ${revokeTxHash}`);
-        console.log('\nDone!');
+        console.log('═'.repeat(60));
+        console.log('🎉 Example Complete!');
+        console.log('═'.repeat(60));
+        console.log(`\nYou can now use this contract in your applications:`);
+        console.log(`   Contract ID: ${contractId}`);
+        console.log(`\nNext steps:`);
+        console.log(`   • Start the indexer to track events`);
+        console.log(`   • View the contract in the frontend`);
+        console.log(`   • Grant roles to other addresses`);
+        console.log(`   • Use requireRole() in your contracts\n`);
+
     } catch (error) {
-        console.error('Error:', error);
+        console.error('\n❌ Error:', error);
         process.exit(1);
     }
 }
