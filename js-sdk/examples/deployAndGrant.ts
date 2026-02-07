@@ -102,7 +102,7 @@ async function main() {
         console.log('Step 4: Verifying Role Grant');
         console.log('═'.repeat(60));
 
-        const hasWit hdrawerRole = await hasRole(
+        const hasWithdrawerRole = await hasRole(
             contractId,
             'WITHDRAWER',
             testUser.publicKey()

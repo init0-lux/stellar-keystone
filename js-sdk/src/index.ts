@@ -34,6 +34,10 @@ import {
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
+import { RoleCheckError, SimulationError, TransactionError } from './errors.js';
+import { EVENT_TYPE_MAP, RBAC_SDK_VERSION, type RoleEvent } from './event-schemas.js';
+import { withRetry } from './retry.js';
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -46,18 +50,58 @@ export interface DeployResult {
     txHash: TxHash;
 }
 
-export interface RoleEvent {
-    type: 'RoleCreated' | 'RoleGranted' | 'RoleRevoked' | 'RoleAdminChanged' | 'RoleExpired';
-    role: string;
-    account?: string;
-    expiry?: number;
-    adminRole?: string;
-    previousAdmin?: string;
-    newAdmin?: string;
-    grantedBy?: string;
-    revokedBy?: string;
-    timestamp: number;
-    txHash: string;
+// Re-export RoleEvent from event-schemas for backwards compatibility
+export type { RoleEvent } from './event-schemas.js';
+
+/**
+ * SDK Configuration options.
+ */
+export interface SDKConfig {
+    /**
+     * Default read-only account public key for simulation.
+     * Used by hasRole() when no specific account is provided.
+     * If not set, SDK will attempt to create a simulated account.
+     */
+    readOnlyAccount?: string;
+}
+
+/**
+ * Options for hasRole operations.
+ */
+export interface HasRoleOptions {
+    /** Network to use */
+    network?: NetworkType;
+    /**
+     * Account public key to use for simulation sourcing.
+     * Overrides SDK-level default.
+     */
+    readOnlyAccount?: string;
+}
+
+// SDK-level configuration
+let sdkConfig: SDKConfig = {};
+
+/**
+ * Configure SDK-level defaults.
+ *
+ * @param config - Configuration options
+ *
+ * @example
+ * ```typescript
+ * configureSDK({
+ *   readOnlyAccount: 'GXXXXXXX...'  // Your known funded account
+ * });
+ * ```
+ */
+export function configureSDK(config: Partial<SDKConfig>): void {
+    sdkConfig = { ...sdkConfig, ...config };
+}
+
+/**
+ * Get current SDK configuration.
+ */
+export function getSDKConfig(): Readonly<SDKConfig> {
+    return { ...sdkConfig };
 }
 
 // =============================================================================
@@ -530,14 +574,21 @@ export async function revokeRole(
  * @param contractId - The RBAC contract ID
  * @param role - The role to check
  * @param account - The account address to check
- * @param network - Network to use (default: 'testnet')
+ * @param networkOrOptions - Network string or options object
  * @returns True if the account has the role (and it hasn't expired)
+ * @throws {RoleCheckError} On transport or simulation failures
  *
  * @example
  * ```typescript
- * const hasWithdrawer = await hasRole(contractId, 'WITHDRAWER', accountAddress);
- * if (hasWithdrawer) {
- *   console.log('Account can withdraw');
+ * try {
+ *   const hasWithdrawer = await hasRole(contractId, 'WITHDRAWER', accountAddress);
+ *   if (hasWithdrawer) {
+ *     console.log('Account can withdraw');
+ *   }
+ * } catch (error) {
+ *   if (error instanceof RoleCheckError) {
+ *     console.error('Could not check role - network error');
+ *   }
  * }
  * ```
  */
@@ -545,32 +596,56 @@ export async function hasRole(
     contractId: string,
     role: string,
     account: string,
-    network: NetworkType = 'testnet'
+    networkOrOptions: NetworkType | HasRoleOptions = 'testnet'
 ): Promise<boolean> {
+    // Parse options
+    const options: HasRoleOptions = typeof networkOrOptions === 'string'
+        ? { network: networkOrOptions }
+        : networkOrOptions;
+    const network = options.network ?? 'testnet';
+    const readOnlyAccount = options.readOnlyAccount ?? sdkConfig.readOnlyAccount;
+
     const config = NETWORK_CONFIG[network];
     const server = getRpcServer(network);
 
     // Create contract instance
     const contract = new Contract(contractId);
 
-    // Create a simulated account for read-only call
-    // For read-only calls, we can use any valid account
-    const simulatedAccount = Keypair.random();
-    const accountInfo = await server.getAccount(simulatedAccount.publicKey()).catch(() => null);
+    // Get or create account for simulation
+    let sourceAccount: import('@stellar/stellar-sdk').Account;
 
-    // If we can't get an account, try to simulate directly
-    // Build the transaction for simulation
-    const tx = new TransactionBuilder(
-        accountInfo || {
-            accountId: () => simulatedAccount.publicKey(),
+    if (readOnlyAccount) {
+        // Use provided read-only account
+        try {
+            sourceAccount = await withRetry(() => server.getAccount(readOnlyAccount));
+        } catch (error) {
+            throw new RoleCheckError(
+                `Failed to fetch read-only account ${readOnlyAccount}`,
+                error,
+                true
+            );
+        }
+    } else {
+        // Fallback: create a minimal simulated account object
+        // This is less reliable but works for basic simulation
+        const tempKeypair = Keypair.random();
+        sourceAccount = {
+            accountId: () => tempKeypair.publicKey(),
             sequenceNumber: () => '0',
             incrementSequenceNumber: () => { },
-        } as unknown as import('@stellar/stellar-sdk').Account,
-        {
-            fee: '100',
-            networkPassphrase: config.passphrase,
-        }
-    )
+        } as unknown as import('@stellar/stellar-sdk').Account;
+
+        console.warn(
+            '[SDK] hasRole: No readOnlyAccount configured. Using simulated account. ' +
+            'Configure SDK with configureSDK({ readOnlyAccount: "GXXX..." }) for reliability.'
+        );
+    }
+
+    // Build the transaction for simulation
+    const tx = new TransactionBuilder(sourceAccount, {
+        fee: '100',
+        networkPassphrase: config.passphrase,
+    })
         .addOperation(
             contract.call(
                 'has_role',
@@ -581,34 +656,73 @@ export async function hasRole(
         .setTimeout(TX_TIMEOUT)
         .build();
 
+    // Execute simulation with retry
+    let simulation: SorobanRpc.Api.SimulateTransactionResponse;
     try {
-        const simulation = await server.simulateTransaction(tx);
-
-        if (SorobanRpc.Api.isSimulationError(simulation)) {
-            console.error('[SDK] Simulation error:', simulation.error);
-            return false;
-        }
-
-        if (SorobanRpc.Api.isSimulationSuccess(simulation) && simulation.result) {
-            const result = scValToNative(simulation.result.retval);
-            return Boolean(result);
-        }
+        simulation = await withRetry(() => server.simulateTransaction(tx));
     } catch (error) {
-        console.error('[SDK] Error checking role:', error);
-        return false;
+        throw new RoleCheckError(
+            'Failed to simulate has_role transaction',
+            error,
+            true
+        );
     }
 
-    return false;
+    // Check simulation result
+    if (SorobanRpc.Api.isSimulationError(simulation)) {
+        throw new RoleCheckError(
+            `Simulation failed: ${simulation.error}`,
+            simulation,
+            false
+        );
+    }
+
+    if (SorobanRpc.Api.isSimulationSuccess(simulation) && simulation.result) {
+        const result = scValToNative(simulation.result.retval);
+        return Boolean(result);
+    }
+
+    // Unexpected response structure
+    throw new RoleCheckError(
+        'Unexpected simulation response - no result returned',
+        simulation,
+        false
+    );
 }
 
 /**
- * Require a role or throw an error.
+ * Assert that an account has a role (CLIENT-SIDE CHECK ONLY).
+ *
+ * ⚠️ SECURITY WARNING: This is a client-side check only. It does NOT
+ * enforce authorization - that happens on-chain in the contract.
+ *
+ * Use this for UX gating (e.g., hiding admin buttons), NOT for
+ * security decisions. The contract always has the final say.
  *
  * @param contractId - The RBAC contract ID
  * @param role - The role to require
  * @param account - The account address to check
- * @param network - Network to use (default: 'testnet')
+ * @param networkOrOptions - Network string or options object
  * @throws Error if the account doesn't have the role
+ * @throws RoleCheckError on transport or simulation failures
+ */
+export async function assertRoleClientSide(
+    contractId: string,
+    role: string,
+    account: string,
+    networkOrOptions: NetworkType | HasRoleOptions = 'testnet'
+): Promise<void> {
+    const has = await hasRole(contractId, role, account, networkOrOptions);
+    if (!has) {
+        throw new Error(`Account ${account} does not have role ${role}`);
+    }
+}
+
+/**
+ * @deprecated Use `assertRoleClientSide` instead. This function will be removed in v2.
+ *
+ * This function has been renamed to clarify that it performs a CLIENT-SIDE
+ * check only and does NOT enforce security.
  */
 export async function requireRoleOrThrow(
     contractId: string,
@@ -616,10 +730,11 @@ export async function requireRoleOrThrow(
     account: string,
     network: NetworkType = 'testnet'
 ): Promise<void> {
-    const has = await hasRole(contractId, role, account, network);
-    if (!has) {
-        throw new Error(`Account ${account} does not have role ${role}`);
-    }
+    console.warn(
+        '[SDK] DEPRECATED: requireRoleOrThrow() is deprecated and will be removed in v2. ' +
+        'Use assertRoleClientSide() instead. This is a client-side check only.'
+    );
+    return assertRoleClientSide(contractId, role, account, network);
 }
 
 /**
@@ -689,6 +804,8 @@ export async function watchRoleEvents(
 
 /**
  * Parse a raw Soroban event into a RoleEvent.
+ *
+ * Uses canonical event type constants from event-schemas.ts.
  */
 function parseRoleEvent(rawEvent: SorobanRpc.Api.EventResponse): RoleEvent | null {
     try {
@@ -696,49 +813,77 @@ function parseRoleEvent(rawEvent: SorobanRpc.Api.EventResponse): RoleEvent | nul
         const topics = rawEvent.topic.map((t) => scValToNative(t));
         const eventType = String(topics[0]);
 
-        // Map event types
-        const typeMap: Record<string, RoleEvent['type']> = {
-            RoleCreat: 'RoleCreated',
-            RoleGrant: 'RoleGranted',
-            RoleRevok: 'RoleRevoked',
-            AdminChg: 'RoleAdminChanged',
-            RoleExpir: 'RoleExpired',
-        };
-
-        const type = typeMap[eventType];
+        // Use canonical event type mapping from event-schemas.ts
+        const type = EVENT_TYPE_MAP[eventType];
         if (!type) {
+            console.warn(
+                `[SDK] Unknown event type: "${eventType}". ` +
+                `SDK version ${RBAC_SDK_VERSION} may need update, or contract uses newer events.`
+            );
             return null;
         }
 
-        const baseEvent: RoleEvent = {
-            type,
-            role: String(topics[1] || ''),
-            timestamp: rawEvent.ledgerClosedAt ? Number(rawEvent.ledgerClosedAt) : 0,
-            txHash: rawEvent.id,
-        };
-
-        // Add type-specific fields
-        if (topics[2]) {
-            baseEvent.account = String(topics[2]);
-        }
-
-        // Parse the value/data
+        // Parse based on event type
+        const role = String(topics[1] || '');
+        const timestamp = rawEvent.ledgerClosedAt ? Number(rawEvent.ledgerClosedAt) : 0;
+        const txHash = rawEvent.id;
         const data = scValToNative(rawEvent.value);
-        if (type === 'RoleGranted' && Array.isArray(data)) {
-            baseEvent.expiry = data[0] as number;
-            baseEvent.grantedBy = String(data[1]);
-        } else if (type === 'RoleRevoked') {
-            baseEvent.revokedBy = String(data);
-        } else if (type === 'RoleAdminChanged' && Array.isArray(data)) {
-            baseEvent.previousAdmin = String(data[0]);
-            baseEvent.newAdmin = String(data[1]);
-        } else if (type === 'RoleCreated') {
-            baseEvent.adminRole = String(data);
-        } else if (type === 'RoleExpired') {
-            baseEvent.expiry = Number(data);
-        }
 
-        return baseEvent;
+        switch (type) {
+            case 'RoleCreated':
+                return {
+                    type,
+                    role,
+                    timestamp,
+                    txHash,
+                    adminRole: String(data),
+                };
+
+            case 'RoleGranted':
+                return {
+                    type,
+                    role,
+                    timestamp,
+                    txHash,
+                    account: String(topics[2] || ''),
+                    expiry: Array.isArray(data) ? (data[0] as number) : 0,
+                    grantedBy: Array.isArray(data) ? String(data[1]) : '',
+                };
+
+            case 'RoleRevoked':
+                return {
+                    type,
+                    role,
+                    timestamp,
+                    txHash,
+                    account: String(topics[2] || ''),
+                    revokedBy: String(data),
+                };
+
+            case 'RoleAdminChanged':
+                return {
+                    type,
+                    role,
+                    timestamp,
+                    txHash,
+                    previousAdmin: Array.isArray(data) ? String(data[0]) : '',
+                    newAdmin: Array.isArray(data) ? String(data[1]) : '',
+                };
+
+            case 'RoleExpired':
+                return {
+                    type,
+                    role,
+                    timestamp,
+                    txHash,
+                    account: String(topics[2] || ''),
+                    expiry: Number(data),
+                };
+
+            default:
+                // Type guard - should never reach here
+                return null;
+        }
     } catch (error) {
         console.error('[SDK] Error parsing event:', error);
         return null;
@@ -749,6 +894,21 @@ function parseRoleEvent(rawEvent: SorobanRpc.Api.EventResponse): RoleEvent | nul
 // Exports
 // =============================================================================
 
+// Re-export error types for consumers
+export { RoleCheckError, SimulationError, TransactionError } from './errors.js';
+
+// Re-export event schema utilities
+export {
+    EVENT_TYPES,
+    EVENT_TYPE_MAP,
+    RBAC_SDK_VERSION,
+    RBAC_EVENT_VERSION,
+} from './event-schemas.js';
+
+// Re-export retry utilities
+export { withRetry, type RetryOptions } from './retry.js';
+
+// Internal utilities (for advanced usage)
 export {
     NETWORK_CONFIG,
     getRpcServer,
