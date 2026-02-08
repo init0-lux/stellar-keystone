@@ -89,7 +89,7 @@ export function GrantRoleCard({ isLoading, onGrant }: GrantRoleCardProps) {
               onChange={handleAddressChange}
               placeholder="Enter account address..."
               disabled={isLoading}
-              className="w-full px-3 py-2 border border-border rounded-md bg-background text-sm text-foreground placeholder:text-muted-foreground disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              className="w-full px-3 py-2 border border-primary/20 rounded-md bg-card text-sm text-foreground placeholder:text-muted-foreground disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
             />
 
             {/* Address Suggestions */}
@@ -140,13 +140,18 @@ export function GrantRoleCard({ isLoading, onGrant }: GrantRoleCardProps) {
                 value={expiryDate}
                 onChange={(e) => setExpiryDate(e.target.value)}
                 disabled={isLoading}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-sm text-foreground disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                className="w-full px-3 py-2 border border-primary/20 rounded-md bg-card text-sm text-foreground disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
               />
             )}
           </div>
 
           {/* Error Message */}
-          {error && <p className="text-xs text-destructive bg-destructive/10 px-3 py-2 rounded">{error}</p>}
+          {error && (
+            <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 px-3 py-2 rounded-lg border border-destructive/20">
+              <div className="h-1.5 w-1.5 rounded-full bg-destructive" />
+              <span>{error}</span>
+            </div>
+          )}
 
           {/* Submit Button */}
           <Button

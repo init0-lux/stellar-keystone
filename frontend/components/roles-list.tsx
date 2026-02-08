@@ -72,15 +72,15 @@ export function RolesList({ roles, isLoading = false }: RolesListProps) {
               key={role.id}
               onMouseEnter={() => setHoveredRoleId(role.id)}
               onMouseLeave={() => setHoveredRoleId(null)}
-              className="flex items-center justify-between px-0 py-4 hover:bg-secondary/30 transition-colors cursor-pointer -mx-6 px-6"
+              className="flex items-center justify-between px-0 py-4 hover:bg-gradient-to-r hover:from-primary/5 hover:to-transparent transition-all duration-300 cursor-pointer -mx-6 px-6 group"
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-3">
-                  <code className="text-sm font-mono text-primary font-medium">
+                  <code className="text-sm font-mono text-primary font-semibold group-hover:text-primary/80 transition-colors">
                     {role.name}
                   </code>
                   {role.isAdmin && (
-                    <Badge variant="default" className="text-xs">
+                    <Badge className="text-xs bg-accent text-accent-foreground">
                       Admin Role
                     </Badge>
                   )}
@@ -97,14 +97,14 @@ export function RolesList({ roles, isLoading = false }: RolesListProps) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-muted-foreground hover:text-foreground"
+                    className="text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
                     onClick={() => router.push(`/roles/${role.id}`)}
                   >
                     View Members
                   </Button>
-                  {hoveredRoleId === role.id && (
-                    <ArrowRight className="h-4 w-4 text-muted-foreground transition-all" />
-                  )}
+                  <ArrowRight className={`h-4 w-4 text-primary transition-all duration-300 ${
+                    hoveredRoleId === role.id ? 'translate-x-0 opacity-100' : '-translate-x-2 opacity-0'
+                  }`} />
                 </div>
               </div>
             </div>

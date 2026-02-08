@@ -2,6 +2,7 @@ import React from "react"
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import { Toaster } from 'sonner'
 import { TopNavigation } from '@/components/top-navigation'
 import './globals.css'
 
@@ -41,6 +42,7 @@ export default function RootLayout({
       <body className={`font-sans antialiased`}>
         <TopNavigation />
         <main>{children}</main>
+        <Toaster position="top-right" richColors />
         <Analytics />
       </body>
     </html>

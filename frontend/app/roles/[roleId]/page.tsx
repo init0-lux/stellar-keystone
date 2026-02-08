@@ -6,6 +6,7 @@ import { ChevronRight } from 'lucide-react'
 import { RoleMetadataCard } from '@/components/role-metadata-card'
 import { MembersTable } from '@/components/members-table'
 import { GrantRoleCard } from '@/components/grant-role-card'
+import { toast } from 'sonner'
 
 const MOCK_MEMBERS = [
   {
@@ -80,13 +81,27 @@ export default function RoleMembersPage({ params }: { params: Promise<{ roleId: 
       }
 
       setMembers([newMember, ...members])
+      toast.success('Role granted successfully', {
+        description: `${newMember.shortAddress} has been granted the ${roleName} role`,
+      })
+    } catch (error) {
+      toast.error('Failed to grant role', {
+        description: 'Please try again later',
+      })
     } finally {
       setIsGranting(false)
     }
   }
 
   const handleRevokeMember = (memberId: string) => {
+    const member = members.find(m => m.id === memberId)
     setMembers(members.filter((m) => m.id !== memberId))
+    
+    if (member) {
+      toast.success('Role revoked successfully', {
+        description: `${member.shortAddress} has been removed from the role`,
+      })
+    }
   }
 
   const isEmpty = members.length === 0

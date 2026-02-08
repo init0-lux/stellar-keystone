@@ -60,22 +60,25 @@ export default function RBACControlPanel() {
         {/* Statistics Section */}
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-3 mb-8">
           <RBACStatCard
-            icon={<Lock className="h-5 w-5 text-primary" />}
+            icon={<Lock className="h-5 w-5" />}
             label="Active Roles"
             value="8"
             description="Roles defined"
+            color="primary"
           />
           <RBACStatCard
-            icon={<Clock className="h-5 w-5 text-primary" />}
+            icon={<Clock className="h-5 w-5" />}
             label="Total Role Grants"
             value="42"
             description="Granted permissions"
+            color="success"
           />
           <RBACStatCard
-            icon={<Lock className="h-5 w-5 text-accent" />}
+            icon={<Lock className="h-5 w-5" />}
             label="Expiring Soon"
             value="3"
             description="In next 24 hours"
+            color="warning"
           />
         </div>
 

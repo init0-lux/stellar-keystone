@@ -54,11 +54,13 @@ export function RecentActivityCard() {
               className="flex items-center justify-between rounded-lg border border-border bg-secondary/20 p-4 hover:bg-secondary/40 transition-colors"
             >
               <div className="flex items-center gap-3 min-w-0 flex-1">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 flex-shrink-0">
+                <div className={`flex h-8 w-8 items-center justify-center rounded-lg flex-shrink-0 ${
+                  activity.action === 'Granted' ? 'bg-success/10' : 'bg-warning/10'
+                }`}>
                   {activity.action === 'Granted' ? (
-                    <LogIn className="h-4 w-4 text-primary" />
+                    <LogIn className="h-4 w-4 text-success" />
                   ) : (
-                    <LogOut className="h-4 w-4 text-destructive" />
+                    <LogOut className="h-4 w-4 text-warning" />
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -73,16 +75,17 @@ export function RecentActivityCard() {
                 </div>
               </div>
               <div className="ml-4 flex items-center gap-3 flex-shrink-0">
-                <Badge
-                  variant={activity.action === 'Granted' ? 'default' : 'secondary'}
-                  className={`text-xs ${
-                    activity.action === 'Granted'
-                      ? 'bg-green-100 text-green-900 hover:bg-green-100'
-                      : 'bg-orange-100 text-orange-900 hover:bg-orange-100'
-                  }`}
-                >
-                  {activity.action}
-                </Badge>
+                {activity.action === 'Granted' ? (
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-success/10">
+                    <div className="h-1.5 w-1.5 rounded-full bg-success" />
+                    <span className="text-xs font-medium text-success">Granted</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-warning/10">
+                    <div className="h-1.5 w-1.5 rounded-full bg-warning" />
+                    <span className="text-xs font-medium text-warning">Revoked</span>
+                  </div>
+                )}
                 <p className="text-xs text-muted-foreground whitespace-nowrap">
                   {activity.timestamp}
                 </p>

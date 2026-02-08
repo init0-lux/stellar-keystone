@@ -12,6 +12,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { ChevronDown, Zap, Home, Users, Rocket } from 'lucide-react'
 import { useState } from 'react'
+import { toast } from 'sonner'
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: Home },
@@ -22,6 +23,20 @@ const navItems = [
 export function TopNavigation() {
   const pathname = usePathname()
   const [network, setNetwork] = useState<'testnet' | 'local'>('testnet')
+  const [isSwitching, setIsSwitching] = useState(false)
+
+  const handleNetworkChange = async (newNetwork: 'testnet' | 'local') => {
+    if (newNetwork === network) return
+    
+    setIsSwitching(true)
+    
+    // Simulate network switch delay
+    await new Promise(resolve => setTimeout(resolve, 800))
+    
+    setNetwork(newNetwork)
+    setIsSwitching(false)
+    toast.success(`Switched to ${newNetwork === 'testnet' ? 'Testnet' : 'Local'} network`)
+  }
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -64,32 +79,50 @@ export function TopNavigation() {
               <Button
                 variant="outline"
                 size="sm"
-                className="gap-2 text-xs sm:text-sm h-9 bg-transparent"
+                className="gap-2 text-xs sm:text-sm h-9 bg-card border-primary/20 hover:bg-primary/10 hover:border-primary/40 transition-all"
+                disabled={isSwitching}
               >
-                <div
-                  className={`h-2 w-2 rounded-full ${network === 'testnet'
-                    ? 'bg-amber-500'
-                    : 'bg-purple-500'
-                    }`}
-                />
-                {network === 'testnet' ? 'Testnet' : 'Local'}
-                <ChevronDown className="h-3 w-3" />
+                {isSwitching ? (
+                  <>
+                    <div className="h-2 w-2 rounded-full bg-muted-foreground animate-pulse" />
+                    <span>Switching...</span>
+                  </>
+                ) : (
+                  <>
+                    <div
+                      className={`h-2 w-2 rounded-full ${network === 'testnet'
+                        ? 'bg-warning animate-pulse'
+                        : 'bg-accent animate-pulse'
+                        }`}
+                    />
+                    {network === 'testnet' ? 'Testnet' : 'Local'}
+                    <ChevronDown className="h-3 w-3" />
+                  </>
+                )}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-32">
+            <DropdownMenuContent align="end" className="w-36">
               <DropdownMenuItem
-                onClick={() => setNetwork('testnet')}
+                onClick={() => handleNetworkChange('testnet')}
                 className="cursor-pointer"
+                disabled={network === 'testnet'}
               >
-                <div className="h-2 w-2 rounded-full bg-amber-500 mr-2" />
-                Testnet
+                <div className="h-2 w-2 rounded-full bg-warning mr-2" />
+                <span>Testnet</span>
+                {network === 'testnet' && (
+                  <span className="ml-auto text-xs text-muted-foreground">Active</span>
+                )}
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={() => setNetwork('local')}
+                onClick={() => handleNetworkChange('local')}
                 className="cursor-pointer"
+                disabled={network === 'local'}
               >
-                <div className="h-2 w-2 rounded-full bg-purple-500 mr-2" />
-                Local
+                <div className="h-2 w-2 rounded-full bg-accent mr-2" />
+                <span>Local</span>
+                {network === 'local' && (
+                  <span className="ml-auto text-xs text-muted-foreground">Active</span>
+                )}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

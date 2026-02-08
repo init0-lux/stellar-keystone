@@ -23,18 +23,18 @@ export function RoleMetadataCard({ role }: RoleMetadataCardProps) {
       <CardHeader className="border-b border-border pb-4">
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 mt-1">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 border border-primary/20 mt-1">
               <Users className="h-6 w-6 text-primary" />
             </div>
             <div>
-              <CardTitle className="text-xl font-semibold mb-1">{role.name}</CardTitle>
-              <p className="text-sm text-muted-foreground line-clamp-2">
+              <CardTitle className="text-xl font-semibold mb-1 text-balance">{role.name}</CardTitle>
+              <p className="text-sm text-muted-foreground line-clamp-2 text-pretty">
                 {role.description || `Manage members and permissions for the ${role.name} role.`}
               </p>
             </div>
           </div>
           {role.isAdmin && (
-            <Badge variant="default" className="text-xs shrink-0">
+            <Badge className="text-xs shrink-0 bg-accent text-accent-foreground">
               Admin Role
             </Badge>
           )}
@@ -50,7 +50,7 @@ export function RoleMetadataCard({ role }: RoleMetadataCardProps) {
             </p>
             <div className="flex flex-wrap gap-2">
               {role.permissions.map((perm) => (
-                <Badge key={perm} variant="outline" className="bg-secondary/50 font-mono text-xs">
+                <Badge key={perm} variant="outline" className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20 font-mono text-xs">
                   {perm}
                 </Badge>
               ))}
@@ -66,9 +66,10 @@ export function RoleMetadataCard({ role }: RoleMetadataCardProps) {
           </div>
           <div className="text-right">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Status</p>
-            <Badge variant="secondary" className="text-xs bg-green-100 text-green-700 hover:bg-green-100/80 dark:bg-green-900/30 dark:text-green-400">
-              Active
-            </Badge>
+            <div className="flex items-center justify-end gap-2">
+              <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
+              <span className="text-sm font-medium text-success">Active</span>
+            </div>
           </div>
         </div>
       </CardContent>
