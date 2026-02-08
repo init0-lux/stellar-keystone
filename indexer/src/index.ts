@@ -410,6 +410,11 @@ class RbacIndexer {
      * Store an event in the events table
      */
     private storeEvent(event: ParsedEvent): void {
+        // Custom JSON serializer that converts BigInt to string
+        const payload = JSON.stringify(event, (key, value) =>
+            typeof value === 'bigint' ? value.toString() : value
+        );
+
         this.db
             .prepare(
                 `INSERT INTO events (contract_id, event_type, payload, tx_hash, created_at)
@@ -418,7 +423,7 @@ class RbacIndexer {
             .run(
                 event.contractId,
                 event.eventType,
-                JSON.stringify(event),
+                payload,
                 event.txHash,
                 event.ledgerTimestamp
             );

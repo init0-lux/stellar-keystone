@@ -87,9 +87,32 @@ rbac deploy \
 # ✅ Deployment successful!
 #    Contract ID: CXXX...
 #    TX Hash: abc123...
+
+# Save it for convenience
+export CONTRACT_ID=CXXX...
 ```
 
-**4. Create and Grant Roles**
+**4. Verify Initialization**
+
+The deployment should automatically initialize the contract, but verify it worked:
+
+```bash
+# Check if contract is initialized (should return your address)
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --network testnet \
+  -- get_deployer
+
+# If it returns null, initialize manually:
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --source keystone-admin \
+  --network testnet \
+  -- initialize \
+  --admin $(stellar keys address keystone-admin)
+```
+
+**5. Create and Grant Roles**
 
 ```bash
 # Save contract ID for convenience

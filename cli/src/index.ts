@@ -281,7 +281,12 @@ program
                 options.contract,
                 options.role,
                 options.address,
-                network
+                {
+                    network,
+                    // Use the address being checked as readOnlyAccount for simulation
+                    // This is safe because hasRole only simulates, doesn't mutate
+                    readOnlyAccount: options.address
+                }
             );
 
             if (options.json) {
