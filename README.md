@@ -32,7 +32,10 @@ git clone https://github.com/stellar-keystone/stellar-keystone.git
 cd stellar-keystone
 
 # Build the RBAC contract
-cd rbac && cargo build --release --target wasm32-unknown-unknown
+cd rbac && \
+  cargo build \
+    --release \
+    --target wasm32-unknown-unknown
 
 # Install SDK dependencies
 cd ../js-sdk && npm install
@@ -40,24 +43,78 @@ cd ../js-sdk && npm install
 # Install CLI
 cd ../cli && npm install && npm link
 
+# Install indexer
+cd ../indexer && npm install
+
 # Start the frontend
 cd ../frontend && npm install && npm run dev
 ```
 
 ### Deploy Your First Contract
 
+**1. Get a Signer Key**
+
+For testnet, create a new identity with Stellar CLI:
+
+```bash
+# Generate a new keypair
+stellar keys generate demo --network testnet
+
+# Fund it with testnet XLM (required for deployment)
+stellar keys fund demo --network testnet
+
+# Get your secret key (starts with S)
+stellar keys show demo
+# Copy the Secret key: SXXX...
+```
+
+**2. Set Environment Variable**
+
 ```bash
 # Set your signer key
 export SIGNER_KEY=SXXX...
+```
 
-# Deploy to testnet
-rbac deploy --network testnet --key-env SIGNER_KEY
+**3. Deploy the Contract**
+
+```bash
+# Deploy to testnet (automatically loads WASM from rbac/target/)
+rbac deploy \
+  --network testnet \
+  --key-env SIGNER_KEY
+
+# Save the Contract ID from output:
+# ✅ Deployment successful!
+#    Contract ID: CXXX...
+#    TX Hash: abc123...
+```
+
+**4. Create and Grant Roles**
+
+```bash
+# Save contract ID for convenience
+export CONTRACT_ID=CXXX...
 
 # Create a role
-rbac create-role --contract <CONTRACT_ID> --role WITHDRAWER --admin DEF_ADMIN --key-env SIGNER_KEY
+rbac create-role \
+  --contract $CONTRACT_ID \
+  --role WITHDRAWER \
+  --admin DEF_ADMIN \
+  --key-env SIGNER_KEY
 
-# Grant the role
-rbac grant --contract <CONTRACT_ID> --role WITHDRAWER --address GXXX... --key-env SIGNER_KEY
+# Grant the role to an address
+rbac grant \
+  --contract $CONTRACT_ID \
+  --role WITHDRAWER \
+  --address GXXX... \
+  --key-env SIGNER_KEY
+
+# Verify the grant
+rbac has-role \
+  --contract $CONTRACT_ID \
+  --role WITHDRAWER \
+  --address GXXX... \
+  --json
 ```
 
 ## Architecture
@@ -152,15 +209,25 @@ Start the event indexer:
 
 ```bash
 cd indexer
-npm start -- --rpc http://127.0.0.1:8000/soroban/rpc --contract <CONTRACT_ID>
+
+# Install dependencies (if not done already)
+npm install
+
+# Build
+npm run build
+
+# Start indexing
+npm start -- \
+  --rpc https://soroban-testnet.stellar.org \
+  --contract $CONTRACT_ID
 ```
 
 Query indexed data:
 
 ```bash
-npm run query -- --contract <ID> --command roles
-npm run query -- --contract <ID> --command members --role WITHDRAWER
-npm run query -- --contract <ID> --command expiring --hours 24
+npm run query -- --contract $CONTRACT_ID --command roles
+npm run query -- --contract $CONTRACT_ID --command members --role WITHDRAWER
+npm run query -- --contract $CONTRACT_ID --command expiring --hours 24
 ```
 
 ## Security
