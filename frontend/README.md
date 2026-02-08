@@ -1,36 +1,22 @@
 # Stellar Keystone Admin UI
 
-Next.js 15 admin panel for managing RBAC contracts on Soroban.
+Next.js 15 admin panel for managing RBAC contracts.
 
 ## Tech Stack
 
-- **Framework:** Next.js 15 + React 19
-- **Language:** TypeScript
-- **Styling:** Tailwind CSS
-- **Components:** Radix UI
-- **Data Fetching:** Tanstack Query
-- **Forms:** React Hook Form
+Next.js 15 + React 19 • TypeScript • Tailwind CSS • Radix UI • Tanstack Query
 
 ## Quick Start
 
 ```bash
-# Install dependencies
 npm install
-
-# Set environment variables
-cp .env.example .env.local
-# Edit .env.local with your values
-
-# Run development server
-npm run dev
-
-# Open http://localhost:3000
+cp .env.example .env.local  # Edit with your values
+npm run dev  # http://localhost:3000
 ```
 
 ## Environment Variables
 
 ```bash
-# .env.local
 NEXT_PUBLIC_RPC_URL=https://soroban-testnet.stellar.org
 NEXT_PUBLIC_INDEXER_API_URL=/api/indexer
 NEXT_PUBLIC_NETWORK=testnet
@@ -38,56 +24,25 @@ NEXT_PUBLIC_NETWORK=testnet
 
 ## Features
 
-### Contract Management
-- Deploy new RBAC contracts
-- View deployed contracts
-- Initialize with admin account
-
-### Role Management
-- Create roles with admin hierarchy
-- View all roles and their admins
-- Change role admins
-
-### Member Management
-- Grant roles to accounts
-- Set expiry timestamps
-- Revoke roles
-- View role members with expiry status
-
-### Monitoring
-- Expiry tracking dashboard
-- Role hierarchy visualization
-- Audit log viewer
+- **Contract Management:** Deploy and initialize RBAC contracts
+- **Role Management:** Create roles, view hierarchy, change admins
+- **Member Management:** Grant/revoke roles with expiry tracking
+- **Monitoring:** Expiry dashboard, audit logs, role visualization
 
 ## API Routes
 
-The frontend provides API routes that query the indexer database:
-
-### `GET /api/indexer/roles`
-List all roles for a contract.
-
-### `GET /api/indexer/members/[role]`
-List all members of a specific role with expiry information.
-
-### `POST /api/deploy`
-Deploy a new RBAC contract (server-side SDK call).
-
-Example integration:
-
 ```typescript
-// app/api/indexer/roles/route.ts
-import Database from 'better-sqlite3';
+// GET /api/indexer/roles - List all roles
+// GET /api/indexer/members/[role] - List role members with expiry
+// POST /api/deploy - Deploy contract (server-side)
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const contractId = searchParams.get('contract');
-  
-  const db = new Database(process.env.INDEXER_DB_PATH!, { readonly: true });
-  const roles = db.prepare('SELECT * FROM roles WHERE contract_id = ?').all(contractId);
-  
-  return Response.json(roles);
-}
+// Example integration:
+import Database from 'better-sqlite3';
+const db = new Database(process.env.INDEXER_DB_PATH!, { readonly: true });
+const roles = db.prepare('SELECT * FROM roles WHERE contract_id = ?').all(contractId);
 ```
+
+See `app/api/indexer/` for complete examples.
 
 ## Project Structure
 
@@ -98,66 +53,24 @@ frontend/
 │   ├── dashboard/     # Main dashboard
 │   ├── roles/         # Role management
 │   └── deploy/        # Contract deployment
-├── components/
-│   ├── ui/            # Radix UI components
-│   └── ...            # Custom components
-└── lib/
-    ├── utils.ts       # Utilities
-    └── api.ts         # API client
-```
-
-## Development
-
-```bash
-# Run dev server
-npm run dev
-
-# Type checking
-npm run type-check
-
-# Linting
-npm run lint
-
-# Format code
-npm run format
+├── components/ui/     # Radix UI components
+└── lib/               # Utilities and API client
 ```
 
 ## Production Build
 
 ```bash
-# Build for production
 npm run build
-
-# Start production server
 npm start
-
-# Or deploy to Vercel
-vercel deploy
+# or deploy to Vercel
 ```
 
 ## Troubleshooting
 
-**API routes return 500 errors**
-- Verify indexer is running
-- Check `INDEXER_DB_PATH` points to correct database
-- Ensure database has been populated by indexer
-
-**Contract deployment fails**
-- Verify `NEXT_PUBLIC_RPC_URL` is correct
-- Check signer key has testnet funds
-- Review browser console for detailed errors
-
-**Roles not appearing**
-- Ensure indexer has processed events
-- Check contract ID is correct
-- Verify API route is querying correct database
+- **API 500 errors** → Verify indexer running, check `INDEXER_DB_PATH`
+- **Deployment fails** → Verify RPC URL, check signer has testnet funds
+- **Roles not appearing** → Ensure indexer processed events, verify contract ID
 
 ## See Also
 
-- [Indexer](../indexer/README.md) - Event indexing setup
-- [SDK](../js-sdk/README.md) - JavaScript SDK documentation
-- [CLI](../cli/README.md) - Command-line alternative
-
-## License
-
-MIT
+[Indexer](../indexer/README.md) | [SDK](../js-sdk/README.md) | [CLI](../cli/README.md)
