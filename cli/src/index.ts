@@ -66,11 +66,75 @@ interface LintReport {
 // =============================================================================
 
 /**
- * Format error for user-friendly display.
+ * RBAC Contract Error Codes (from rbac/src/errors.rs)
+ */
+const RBAC_ERRORS: Record<number, { name: string; message: string; suggestion: string }> = {
+    1: {
+        name: 'NotAuthorized',
+        message: 'You do not have permission to perform this action',
+        suggestion: 'Make sure you have the required admin role. Use `rbac has-role` to check your roles.',
+    },
+    2: {
+        name: 'InvalidExpiry',
+        message: 'The expiry timestamp is invalid',
+        suggestion: 'Expiry must be in the future. Use ISO8601 format: "2026-12-31T23:59:59Z"',
+    },
+    3: {
+        name: 'RoleNotFound',
+        message: 'The role does not exist',
+        suggestion: 'Create the role first with `rbac create-role` before granting it.',
+    },
+    4: {
+        name: 'NotMember',
+        message: 'The account does not have this role',
+        suggestion: 'Grant the role first with `rbac grant` before trying to revoke it.',
+    },
+    5: {
+        name: 'RoleAlreadyExists',
+        message: 'A role with this name already exists',
+        suggestion: 'Choose a different role name or use the existing role.',
+    },
+    6: {
+        name: 'InvalidSelfAdmin',
+        message: 'A role cannot be its own admin (except DEF_ADMIN)',
+        suggestion: 'Specify a different admin role when creating this role.',
+    },
+    7: {
+        name: 'AlreadyInitialized',
+        message: 'The contract has already been initialized',
+        suggestion: 'You can only initialize a contract once. Use the existing contract.',
+    },
+    8: {
+        name: 'StorageCorrupted',
+        message: 'Internal contract storage is corrupted',
+        suggestion: 'This is a critical error. The contract may need to be redeployed.',
+    },
+};
+
+/**
+ * Format error for user-friendly display with actionable suggestions.
  */
 function formatError(error: unknown): string {
     if (error instanceof Error) {
-        return error.message;
+        const message = error.message;
+
+        // Try to extract contract error code from message
+        // Format: "Error(Contract, #N)" where N is the error code
+        const contractErrorMatch = message.match(/Error\(Contract,\s*#(\d+)\)/);
+        if (contractErrorMatch) {
+            const errorCode = parseInt(contractErrorMatch[1], 10);
+            const rbacError = RBAC_ERRORS[errorCode];
+
+            if (rbacError) {
+                return (
+                    `${rbacError.name}: ${rbacError.message}\n\n` +
+                    `💡 Suggestion: ${rbacError.suggestion}\n\n` +
+                    `Technical details: ${message}`
+                );
+            }
+        }
+
+        return message;
     }
     if (typeof error === 'string') {
         return error;
@@ -281,7 +345,12 @@ program
                 options.contract,
                 options.role,
                 options.address,
-                network
+                {
+                    network,
+                    // Use the address being checked as readOnlyAccount for simulation
+                    // This is safe because hasRole only simulates, doesn't mutate
+                    readOnlyAccount: options.address
+                }
             );
 
             if (options.json) {

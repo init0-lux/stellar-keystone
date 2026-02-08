@@ -118,7 +118,10 @@ class RbacIndexer {
     constructor(config: IndexerConfig) {
         this.config = config;
         this.db = new Database(config.dbPath);
-        this.server = new SorobanRpc.Server(config.rpcUrl);
+
+        // Allow HTTP for local development (RPC URLs starting with http://)
+        const allowHttp = config.rpcUrl.startsWith('http://');
+        this.server = new SorobanRpc.Server(config.rpcUrl, { allowHttp });
 
         // Initialize schema
         this.initSchema();
@@ -207,17 +210,29 @@ class RbacIndexer {
                 return; // Success
             } catch (error) {
                 const isLastAttempt = attempt === maxRetries;
-                const errorMsg = error instanceof Error ? error.message : String(error);
+
+                // Better error formatting
+                let errorMsg: string;
+                if (error instanceof Error) {
+                    errorMsg = error.message;
+                    if (error.stack && isLastAttempt) {
+                        console.error(`[Indexer] Stack trace:`, error.stack);
+                    }
+                } else if (typeof error === 'object' && error !== null) {
+                    errorMsg = JSON.stringify(error, null, 2);
+                } else {
+                    errorMsg = String(error);
+                }
 
                 if (isLastAttempt) {
                     console.error(
-                        `[Indexer] Failed to poll ${contractId} after ${maxRetries} attempts: ${errorMsg}`
+                        `[Indexer] Failed to poll ${contractId} after ${maxRetries} attempts:\n${errorMsg}`
                     );
                 } else {
                     const backoffMs = 1000 * Math.pow(2, attempt - 1); // 1s, 2s, 4s
                     console.warn(
-                        `[Indexer] Attempt ${attempt}/${maxRetries} failed for ${contractId}, ` +
-                        `retrying in ${backoffMs}ms...`
+                        `[Indexer] Attempt ${attempt}/${maxRetries} failed for ${contractId}:\n${errorMsg}\n` +
+                        `Retrying in ${backoffMs}ms...`
                     );
                     await this.sleep(backoffMs);
                 }
@@ -229,11 +244,20 @@ class RbacIndexer {
      * Poll events for a specific contract
      */
     private async pollContract(contractId: string): Promise<void> {
-        const lastLedger = this.getLastIndexedLedger(contractId);
+        let lastLedger = this.getLastIndexedLedger(contractId);
+
 
         try {
-            const response = await this.server.getEvents({
-                startLedger: lastLedger ? lastLedger + 1 : 1,
+            // If we don't have a last ledger, get the latest ledger from the network
+            if (!lastLedger) {
+                const latestLedger = await this.server.getLatestLedger();
+                lastLedger = latestLedger.sequence;
+                console.log(`[Indexer] Starting from latest ledger: ${lastLedger}`);
+            }
+
+            // Build request with startLedger (now guaranteed to be set)
+            const request: any = {
+                startLedger: lastLedger,
                 filters: [
                     {
                         type: 'contract',
@@ -241,7 +265,9 @@ class RbacIndexer {
                     },
                 ],
                 limit: 1000,
-            });
+            };
+
+            const response = await this.server.getEvents(request);
 
             if (response.events && response.events.length > 0) {
                 console.log(`[Indexer] Found ${response.events.length} events for ${contractId}`);
@@ -256,11 +282,27 @@ class RbacIndexer {
                 this.setLastIndexedLedger(contractId, response.latestLedger);
             }
         } catch (error) {
-            // Handle case where no events exist yet
-            const err = error as Error;
-            if (!err.message?.includes('not found')) {
-                throw error;
+            // Handle ledger range errors from Stellar RPC
+            if (error && typeof error === 'object' && 'code' in error && error.code === -32600) {
+                const errorMsg = 'message' in error ? String(error.message) : '';
+                if (errorMsg.includes('startLedger must be within')) {
+                    // Extract the valid range from error message
+                    const match = errorMsg.match(/(\d+)\s*-\s*(\d+)/);
+                    if (match) {
+                        const oldestLedger = parseInt(match[1], 10);
+                        console.warn(
+                            `[Indexer] Ledger ${lastLedger || 1} is outside available range. ` +
+                            `Starting from oldest available ledger: ${oldestLedger}`
+                        );
+                        // Set to oldest available ledger and retry will happen on next poll
+                        this.setLastIndexedLedger(contractId, oldestLedger - 1);
+                        return;
+                    }
+                }
             }
+
+            // Re-throw other errors
+            throw error;
         }
     }
 
@@ -368,6 +410,11 @@ class RbacIndexer {
      * Store an event in the events table
      */
     private storeEvent(event: ParsedEvent): void {
+        // Custom JSON serializer that converts BigInt to string
+        const payload = JSON.stringify(event, (key, value) =>
+            typeof value === 'bigint' ? value.toString() : value
+        );
+
         this.db
             .prepare(
                 `INSERT INTO events (contract_id, event_type, payload, tx_hash, created_at)
@@ -376,7 +423,7 @@ class RbacIndexer {
             .run(
                 event.contractId,
                 event.eventType,
-                JSON.stringify(event),
+                payload,
                 event.txHash,
                 event.ledgerTimestamp
             );

@@ -428,6 +428,7 @@ export async function createRole(
         .addOperation(
             contract.call(
                 'create_role',
+                new Address(publicKey).toScVal(), // caller
                 nativeToScVal(role, { type: 'symbol' }),
                 nativeToScVal(adminRole, { type: 'symbol' })
             )
@@ -496,6 +497,7 @@ export async function grantRole(
         .addOperation(
             contract.call(
                 'grant_role',
+                new Address(publicKey).toScVal(), // caller
                 nativeToScVal(role, { type: 'symbol' }),
                 new Address(account).toScVal(),
                 nativeToScVal(expiryTimestamp, { type: 'u64' })
@@ -554,6 +556,7 @@ export async function revokeRole(
         .addOperation(
             contract.call(
                 'revoke_role',
+                new Address(publicKey).toScVal(), // caller
                 nativeToScVal(role, { type: 'symbol' }),
                 new Address(account).toScVal()
             )
@@ -610,6 +613,7 @@ export async function setRoleAdmin(
         .addOperation(
             contract.call(
                 'set_role_admin',
+                new Address(publicKey).toScVal(), // caller
                 nativeToScVal(role, { type: 'symbol' }),
                 nativeToScVal(newAdminRole, { type: 'symbol' })
             )
