@@ -36,6 +36,7 @@ export default function RoleMembersPage({ params }: { params: Promise<{ roleId: 
   const { roleId } = use(params)
   const [members, setMembers] = useState<any[]>(MOCK_MEMBERS as any) // Cast to any to avoid readonly issues with MOCK_MEMBERS
   const [isGranting, setIsGranting] = useState(false)
+  const [isPageLoading, setIsPageLoading] = useState(true)
 
   // Fetch role metadata from API
   const [metadata, setMetadata] = useState<{ description?: string, permissions?: string[] } | null>(null)
@@ -50,6 +51,9 @@ export default function RoleMembersPage({ params }: { params: Promise<{ roleId: 
         }
       } catch (error) {
         console.error('Failed to fetch role metadata', error)
+      } finally {
+        // Simulate page load time
+        setTimeout(() => setIsPageLoading(false), 400)
       }
     }
     fetchMetadata()
@@ -105,6 +109,32 @@ export default function RoleMembersPage({ params }: { params: Promise<{ roleId: 
   }
 
   const isEmpty = members.length === 0
+
+  if (isPageLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+          {/* Breadcrumb skeleton */}
+          <div className="mb-8 h-5 w-32 rounded bg-muted animate-pulse" />
+          
+          {/* Header skeleton */}
+          <div className="mb-8 space-y-2">
+            <div className="h-8 w-48 rounded bg-muted animate-pulse" />
+            <div className="h-4 w-64 rounded bg-muted animate-pulse" />
+          </div>
+
+          {/* Cards skeleton */}
+          <div className="grid gap-8 lg:grid-cols-2 mb-8">
+            <div className="h-64 rounded-lg bg-muted animate-pulse" />
+            <div className="h-64 rounded-lg bg-muted animate-pulse" />
+          </div>
+
+          {/* Table skeleton */}
+          <div className="h-96 rounded-lg bg-muted animate-pulse" />
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background">

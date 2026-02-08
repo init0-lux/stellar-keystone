@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Copy, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react'
+import { Copy, CheckCircle, AlertCircle, ChevronDown, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 type DeploymentState = 'idle' | 'loading' | 'success' | 'error'
@@ -238,7 +238,7 @@ export default function DeployPage() {
                 >
                   {deploymentState === 'loading' ? (
                     <>
-                      <span className="inline-block animate-spin mr-2">⚙️</span>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       Deploying...
                     </>
                   ) : (

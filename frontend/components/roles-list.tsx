@@ -22,6 +22,12 @@ interface RolesListProps {
 export function RolesList({ roles, isLoading = false }: RolesListProps) {
   const router = useRouter()
   const [hoveredRoleId, setHoveredRoleId] = useState<string | null>(null)
+  const [navigatingToId, setNavigatingToId] = useState<string | null>(null)
+
+  const handleRoleClick = (roleId: string) => {
+    setNavigatingToId(roleId)
+    router.push(`/roles/${roleId}`)
+  }
 
   if (isLoading) {
     return (
@@ -70,12 +76,16 @@ export function RolesList({ roles, isLoading = false }: RolesListProps) {
           {roles.map((role) => (
             <div
               key={role.id}
+              onClick={() => handleRoleClick(role.id)}
               onMouseEnter={() => setHoveredRoleId(role.id)}
               onMouseLeave={() => setHoveredRoleId(null)}
               className="flex items-center justify-between px-0 py-4 hover:bg-gradient-to-r hover:from-primary/5 hover:to-transparent transition-all duration-300 cursor-pointer -mx-6 px-6 group"
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-3">
+                  {navigatingToId === role.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  ) : null}
                   <code className="text-sm font-mono text-primary font-semibold group-hover:text-primary/80 transition-colors">
                     {role.name}
                   </code>
@@ -94,14 +104,9 @@ export function RolesList({ roles, isLoading = false }: RolesListProps) {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
-                    onClick={() => router.push(`/roles/${role.id}`)}
-                  >
-                    View Members
-                  </Button>
+                  <span className="text-sm text-muted-foreground group-hover:text-primary transition-colors">
+                    {navigatingToId === role.id ? 'Loading...' : 'View Members'}
+                  </span>
                   <ArrowRight className={`h-4 w-4 text-primary transition-all duration-300 ${
                     hoveredRoleId === role.id ? 'translate-x-0 opacity-100' : '-translate-x-2 opacity-0'
                   }`} />
