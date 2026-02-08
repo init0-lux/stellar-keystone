@@ -32,8 +32,8 @@ Managing permissions in decentralized applications is complex. Hardcoding addres
 
 ## Deployed Link & Contract
 
-- **Admin Dashboard**: [Replace with Vercel/Netlify Link]
-- **Testnet Contract Address**: `[Replace with your deployed Contract ID]`
+- **Admin Dashboard**: infra-tooling, local nextjs instance 
+- **Testnet Contract Address**: CBWA2P4QKHFC3MNBTW3ECDUYWARLSWLY553OWN24IWBKLYIJ5VAUKCCZ
 
 
 ## Quick Start
@@ -199,21 +199,21 @@ rbac lint \
                      │
                      ▼
             ┌──────────────────┐
-            │   JS SDK         │
+            │      JS SDK      │
             └────────┬─────────┘
                      │
         ┌────────────┼────────────┐
         ▼            ▼            ▼
-   Soroban RPC   Indexer      Events
-        │        (SQLite)        │
-        │            │           │
-        └────────────┴───────────┘
+   Soroban RPC   Indexer       Events
+        │        (SQLite)         │
+        │            │            │
+        └────────────┴────────────┘
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────┐
 │         Stellar Blockchain (Soroban)                    │
 │  ┌──────────────────┐      ┌──────────────────┐         │
-│  │  RBAC Contract   │◀─────│  Your Contract   │         │
+│  │  RBAC Contract   │◀─────│  Your Contract  │         │
 │  └──────────────────┘      └──────────────────┘         │
 │         │ emits events                                  │
 │         ▼                                               │
@@ -225,11 +225,19 @@ rbac lint \
 
 ```
 stellar-keystone/
-├── rbac/                   # Soroban RBAC contract (Rust)
-├── js-sdk/                 # TypeScript SDK for interactions
-├── cli/                    # CLI tools for admin tasks
-├── indexer/                # Event indexer (SQLite + RPC polling)
-└── frontend/               # Next.js Admin Dashboard
+├── rbac/                   # Soroban RBAC contract
+│   └── src/lib.rs
+├── examples/
+│   └── secure_vault/       # Example contract using RBAC
+├── js-sdk/                 # JavaScript/TypeScript SDK
+│   └── src/index.ts
+├── cli/                    # Command-line interface
+│   └── src/index.ts
+├── indexer/                # SQLite event indexer
+│   └── src/index.ts
+├── frontend/               # Next.js admin UI
+│   └── app/
+└── optional/               # Advanced features
 ```
 
 ## Contract API
