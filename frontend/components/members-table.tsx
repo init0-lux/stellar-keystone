@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Copy, Trash2 } from 'lucide-react'
+import { Copy, Trash2, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface Member {
   id: string
@@ -22,11 +23,19 @@ interface MembersTableProps {
 
 export function MembersTable({ members, isEmpty, onRevoke }: MembersTableProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [revokingId, setRevokingId] = useState<string | null>(null)
 
-  const copyToClipboard = (address: string, memberId: string) => {
-    navigator.clipboard.writeText(address)
+  const copyToClipboard = async (address: string, memberId: string) => {
+    await navigator.clipboard.writeText(address)
     setCopiedId(memberId)
+    toast.success('Address copied to clipboard')
     setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  const handleRevoke = async (memberId: string) => {
+    setRevokingId(memberId)
+    await onRevoke(memberId)
+    setRevokingId(null)
   }
 
   const formatExpiry = (expiryDate: string | null) => {
@@ -85,20 +94,30 @@ export function MembersTable({ members, isEmpty, onRevoke }: MembersTableProps) 
                     </td>
                     <td className="py-4 px-4 text-muted-foreground">{formatExpiry(member.expiry)}</td>
                     <td className="py-4 px-4">
-                      <Badge
-                        variant={member.status === 'Active' ? 'default' : 'secondary'}
-                        className="text-xs"
-                      >
-                        {member.status}
-                      </Badge>
+                      {member.status === 'Active' ? (
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
+                          <span className="text-sm text-success font-medium">Active</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 w-2 rounded-full bg-muted-foreground" />
+                          <span className="text-sm text-muted-foreground">Expired</span>
+                        </div>
+                      )}
                     </td>
                     <td className="py-4 px-4 text-right">
                       <button
-                        onClick={() => onRevoke(member.id)}
-                        className="p-1 hover:bg-destructive/10 rounded transition-colors"
+                        onClick={() => handleRevoke(member.id)}
+                        disabled={revokingId === member.id}
+                        className="p-1 hover:bg-destructive/10 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Revoke role"
                       >
-                        <Trash2 className="h-4 w-4 text-destructive hover:text-destructive" />
+                        {revokingId === member.id ? (
+                          <Loader2 className="h-4 w-4 text-destructive animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4 text-destructive hover:text-destructive" />
+                        )}
                       </button>
                     </td>
                   </tr>

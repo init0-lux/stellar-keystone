@@ -11,8 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Copy, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react'
-import { useState as useStateHook } from 'react'
+import { Copy, CheckCircle, AlertCircle, ChevronDown, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 type DeploymentState = 'idle' | 'loading' | 'success' | 'error'
 
@@ -33,28 +33,39 @@ export default function DeployPage() {
   const handleDeploy = async () => {
     setDeploymentState('loading')
     setDeploymentResult(null)
+    toast.info('Deploying contract...', {
+      description: 'This may take a few moments',
+    })
 
     // Simulate deployment process
     try {
       await new Promise((resolve) => setTimeout(resolve, 2000))
 
       // Mock success
+      const contractAddress = 'CA3D5KRYM6CB7OWQ6TWYRR3Z4T7GNZLKERYNZGGA5AWAOEJKQQA7Q3XM'
       setDeploymentState('success')
       setDeploymentResult({
-        contractAddress: 'CA3D5KRYM6CB7OWQ6TWYRR3Z4T7GNZLKERYNZGGA5AWAOEJKQQA7Q3XM',
+        contractAddress,
+      })
+      toast.success('Contract deployed successfully!', {
+        description: `Address: ${contractAddress.slice(0, 8)}...${contractAddress.slice(-6)}`,
       })
     } catch (error) {
       setDeploymentState('error')
       setDeploymentResult({
         error: 'Failed to deploy contract. Please check your wallet connection and try again.',
       })
+      toast.error('Deployment failed', {
+        description: 'Please check your wallet connection and try again',
+      })
     }
   }
 
-  const handleCopyAddress = () => {
+  const handleCopyAddress = async () => {
     if (deploymentResult?.contractAddress) {
-      navigator.clipboard.writeText(deploymentResult.contractAddress)
+      await navigator.clipboard.writeText(deploymentResult.contractAddress)
       setCopied(true)
+      toast.success('Contract address copied to clipboard')
       setTimeout(() => setCopied(false), 2000)
     }
   }
@@ -161,20 +172,20 @@ export default function DeployPage() {
 
             {/* Success Alert */}
             {deploymentState === 'success' && deploymentResult?.contractAddress && (
-              <Alert className="border-green-200 bg-green-50">
-                <CheckCircle className="h-4 w-4 text-green-600" />
+              <Alert className="border-success/30 bg-gradient-to-br from-success/10 to-success/5">
+                <CheckCircle className="h-4 w-4 text-success" />
                 <AlertDescription className="ml-2">
-                  <p className="font-medium text-green-900">Contract deployed successfully!</p>
-                  <div className="mt-3 flex items-center gap-2 rounded-md bg-green-100 p-3">
+                  <p className="font-semibold text-foreground">Contract deployed successfully!</p>
+                  <div className="mt-3 flex items-center gap-2 rounded-md bg-card border border-success/20 p-3">
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs text-green-700 font-medium mb-1">Contract Address</p>
-                      <code className="text-sm text-green-900 font-mono break-all block">
+                      <p className="text-xs text-muted-foreground font-medium mb-1">Contract Address</p>
+                      <code className="text-sm text-foreground font-mono break-all block">
                         {deploymentResult.contractAddress}
                       </code>
                     </div>
                     <button
                       onClick={handleCopyAddress}
-                      className="text-green-600 hover:text-green-700 transition-colors"
+                      className="text-success hover:text-success/80 transition-colors"
                       title="Copy contract address"
                     >
                       {copied ? (
@@ -190,9 +201,9 @@ export default function DeployPage() {
 
             {/* Error Alert */}
             {deploymentState === 'error' && deploymentResult?.error && (
-              <Alert className="border-red-200 bg-red-50">
-                <AlertCircle className="h-4 w-4 text-red-600" />
-                <AlertDescription className="ml-2 text-red-900">
+              <Alert className="border-destructive/30 bg-gradient-to-br from-destructive/10 to-destructive/5">
+                <AlertCircle className="h-4 w-4 text-destructive" />
+                <AlertDescription className="ml-2 text-foreground font-medium">
                   {deploymentResult.error}
                 </AlertDescription>
               </Alert>
@@ -227,7 +238,7 @@ export default function DeployPage() {
                 >
                   {deploymentState === 'loading' ? (
                     <>
-                      <span className="inline-block animate-spin mr-2">⚙️</span>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       Deploying...
                     </>
                   ) : (

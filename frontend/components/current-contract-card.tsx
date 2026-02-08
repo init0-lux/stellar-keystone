@@ -4,15 +4,17 @@ import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Copy, Check } from 'lucide-react'
+import { toast } from 'sonner'
 
 export function CurrentContractCard() {
   const [copied, setCopied] = useState(false)
 
   const contractAddress = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF'
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(contractAddress)
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(contractAddress)
     setCopied(true)
+    toast.success('Contract address copied to clipboard')
     setTimeout(() => setCopied(false), 2000)
   }
 
@@ -49,17 +51,19 @@ export function CurrentContractCard() {
               <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">
                 Network
               </p>
-              <Badge variant="secondary" className="text-xs">
-                Testnet
-              </Badge>
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-warning animate-pulse" />
+                <span className="text-sm font-medium text-foreground">Testnet</span>
+              </div>
             </div>
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">
                 Status
               </p>
-              <Badge className="text-xs bg-green-100 text-green-900 hover:bg-green-100">
-                Active
-              </Badge>
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
+                <span className="text-sm font-medium text-success">Active</span>
+              </div>
             </div>
           </div>
 

@@ -10,8 +10,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
-import { ChevronDown, Zap, Home, Users, Rocket } from 'lucide-react'
+import { ChevronDown, Zap, Home, Users, Rocket, Loader2 } from 'lucide-react'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: Home },
@@ -21,7 +23,30 @@ const navItems = [
 
 export function TopNavigation() {
   const pathname = usePathname()
+  const router = useRouter()
   const [network, setNetwork] = useState<'testnet' | 'local'>('testnet')
+  const [isSwitching, setIsSwitching] = useState(false)
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null)
+
+  const handleNavigation = (href: string) => {
+    if (pathname !== href) {
+      setNavigatingTo(href)
+      router.push(href)
+    }
+  }
+
+  const handleNetworkChange = async (newNetwork: 'testnet' | 'local') => {
+    if (newNetwork === network) return
+    
+    setIsSwitching(true)
+    
+    // Simulate network switch delay
+    await new Promise(resolve => setTimeout(resolve, 800))
+    
+    setNetwork(newNetwork)
+    setIsSwitching(false)
+    toast.success(`Switched to ${newNetwork === 'testnet' ? 'Testnet' : 'Local'} network`)
+  }
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -40,18 +65,24 @@ export function TopNavigation() {
             const Icon = item.icon
             const isActive = pathname === item.href ||
               (item.href !== '/' && pathname.startsWith(item.href))
+            const isNavigating = navigatingTo === item.href
 
             return (
-              <Link key={item.href} href={item.href}>
-                <Button
-                  variant={isActive ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className={`gap-2 ${isActive ? 'bg-secondary' : ''}`}
-                >
+              <Button
+                key={item.href}
+                onClick={() => handleNavigation(item.href)}
+                variant={isActive ? 'secondary' : 'ghost'}
+                size="sm"
+                disabled={isNavigating}
+                className={`gap-2 ${isActive ? 'bg-secondary' : ''} cursor-pointer hover:bg-secondary/50 transition-all`}
+              >
+                {isNavigating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
                   <Icon className="h-4 w-4" />
-                  <span className="hidden sm:inline">{item.label}</span>
-                </Button>
-              </Link>
+                )}
+                <span className="hidden sm:inline">{item.label}</span>
+              </Button>
             )
           })}
         </nav>
@@ -64,32 +95,50 @@ export function TopNavigation() {
               <Button
                 variant="outline"
                 size="sm"
-                className="gap-2 text-xs sm:text-sm h-9 bg-transparent"
+                className="gap-2 text-xs sm:text-sm h-9 bg-card border-primary/20 hover:bg-primary/10 hover:border-primary/40 transition-all"
+                disabled={isSwitching}
               >
-                <div
-                  className={`h-2 w-2 rounded-full ${network === 'testnet'
-                    ? 'bg-amber-500'
-                    : 'bg-purple-500'
-                    }`}
-                />
-                {network === 'testnet' ? 'Testnet' : 'Local'}
-                <ChevronDown className="h-3 w-3" />
+                {isSwitching ? (
+                  <>
+                    <div className="h-2 w-2 rounded-full bg-muted-foreground animate-pulse" />
+                    <span>Switching...</span>
+                  </>
+                ) : (
+                  <>
+                    <div
+                      className={`h-2 w-2 rounded-full ${network === 'testnet'
+                        ? 'bg-warning animate-pulse'
+                        : 'bg-accent animate-pulse'
+                        }`}
+                    />
+                    {network === 'testnet' ? 'Testnet' : 'Local'}
+                    <ChevronDown className="h-3 w-3" />
+                  </>
+                )}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-32">
+            <DropdownMenuContent align="end" className="w-36">
               <DropdownMenuItem
-                onClick={() => setNetwork('testnet')}
+                onClick={() => handleNetworkChange('testnet')}
                 className="cursor-pointer"
+                disabled={network === 'testnet'}
               >
-                <div className="h-2 w-2 rounded-full bg-amber-500 mr-2" />
-                Testnet
+                <div className="h-2 w-2 rounded-full bg-warning mr-2" />
+                <span>Testnet</span>
+                {network === 'testnet' && (
+                  <span className="ml-auto text-xs text-muted-foreground">Active</span>
+                )}
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={() => setNetwork('local')}
+                onClick={() => handleNetworkChange('local')}
                 className="cursor-pointer"
+                disabled={network === 'local'}
               >
-                <div className="h-2 w-2 rounded-full bg-purple-500 mr-2" />
-                Local
+                <div className="h-2 w-2 rounded-full bg-accent mr-2" />
+                <span>Local</span>
+                {network === 'local' && (
+                  <span className="ml-auto text-xs text-muted-foreground">Active</span>
+                )}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
