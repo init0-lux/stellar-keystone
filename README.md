@@ -15,6 +15,27 @@ Stellar Keystone is a comprehensive RBAC system designed for Stellar smart contr
 - **Indexer**: SQLite-based event indexer for efficient querying
 - **Admin UI**: Next.js dashboard for visual role management
 
+## Problem Statement
+
+Managing permissions in decentralized applications is complex. Hardcoding addresses (e.g., `const ADMIN = 'G...'`) into smart contracts is rigid, hard to audit, and difficult to update. Key rotation becomes a nightmare, and visibility into "who can do what" is often non-existent.
+
+**Stellar Keystone solves this by:**
+1.  **Decoupling Permissions**: Storing roles and grants in a dedicated, on-chain contract.
+2.  **Providing Visibility**: Indexing events to show specific role members and expiry times.
+3.  **Enabling Flexibility**: Allowing admins to expire, revoke, or re-assign roles without upgrading the core business logic contracts.
+
+## Screenshots
+
+![Dashboard Preview](assets/dashboard-preview.webp)
+
+*Admin Dashboard showing active roles and recent activity.*
+
+## Deployed Link & Contract
+
+- **Admin Dashboard**: [Replace with Vercel/Netlify Link]
+- **Testnet Contract Address**: `[Replace with your deployed Contract ID]`
+
+
 ## Quick Start
 
 ### Prerequisites
@@ -168,21 +189,47 @@ rbac lint \
 
 ## Architecture
 
+### System Diagram
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    User Layer                           │
+│  Frontend (Next.js) | CLI (Node.js) | Custom App        │
+└────────────────────┬────────────────────────────────────┘
+                     │
+                     ▼
+            ┌──────────────────┐
+            │   JS SDK         │
+            └────────┬─────────┘
+                     │
+        ┌────────────┼────────────┐
+        ▼            ▼            ▼
+   Soroban RPC   Indexer      Events
+        │        (SQLite)        │
+        │            │           │
+        └────────────┴───────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│         Stellar Blockchain (Soroban)                    │
+│  ┌──────────────────┐      ┌──────────────────┐         │
+│  │  RBAC Contract   │◀─────│  Your Contract   │         │
+│  └──────────────────┘      └──────────────────┘         │
+│         │ emits events                                  │
+│         ▼                                               │
+│  [ RoleCreated, RoleGranted, RoleRevoked, ... ]         │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Component Structure
+
 ```
 stellar-keystone/
-├── rbac/                   # Soroban RBAC contract
-│   └── src/lib.rs
-├── examples/
-│   └── secure_vault/       # Example contract using RBAC
-├── js-sdk/                 # JavaScript/TypeScript SDK
-│   └── src/index.ts
-├── cli/                    # Command-line interface
-│   └── src/index.ts
-├── indexer/                # SQLite event indexer
-│   └── src/index.ts
-├── frontend/               # Next.js admin UI
-│   └── app/
-└── optional/               # Advanced features
+├── rbac/                   # Soroban RBAC contract (Rust)
+├── js-sdk/                 # TypeScript SDK for interactions
+├── cli/                    # CLI tools for admin tasks
+├── indexer/                # Event indexer (SQLite + RPC polling)
+└── frontend/               # Next.js Admin Dashboard
 ```
 
 ## Contract API
@@ -296,6 +343,13 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for:
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
+
+## Future Scope
+
+1.  **Multi-chain Support**: Adapting the SDK for other WASM-based chains.
+2.  **DAO Integration**: Allowing roles to be managed by a DAO (multisig or governance token) instead of a single admin key.
+3.  **Audit & Verification**: Formal verification of the RBAC contract logic.
+4.  **Mainnet Launch**: Deployment to Stellar Mainnet with robust indexer infrastructure.
 
 ## Links
 

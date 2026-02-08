@@ -31,9 +31,6 @@ import {
     scValToNative,
     hash,
 } from '@stellar/stellar-sdk';
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
-
 import { RoleCheckError, SimulationError, TransactionError } from './errors.js';
 import { EVENT_TYPE_MAP, RBAC_SDK_VERSION, type RoleEvent } from './event-schemas.js';
 import { withRetry } from './retry.js';
@@ -234,19 +231,29 @@ async function submitTransaction(
 // =============================================================================
 
 /**
- * Load the compiled RBAC WASM file.
+ * Load the compiled RBAC WASM file (Node.js only).
  */
 function loadRbacWasm(): Buffer {
+    // Dynamic require to avoid bundling issues in browser
+    let fs;
+    let path;
+    try {
+        fs = require('fs');
+        path = require('path');
+    } catch (e) {
+        throw new Error('File system access not available. Please pass wasmBinary explicitly.');
+    }
+
     // Try multiple potential paths for the WASM file
     const possiblePaths = [
-        resolve(__dirname, '../../rbac/target/wasm32-unknown-unknown/release/stellar_keystone_rbac.wasm'),
-        resolve(process.cwd(), 'rbac/target/wasm32-unknown-unknown/release/stellar_keystone_rbac.wasm'),
-        resolve(__dirname, '../../../rbac/target/wasm32-unknown-unknown/release/stellar_keystone_rbac.wasm'),
+        path.resolve(__dirname, '../../rbac/target/wasm32-unknown-unknown/release/stellar_keystone_rbac.wasm'),
+        path.resolve(process.cwd(), 'rbac/target/wasm32-unknown-unknown/release/stellar_keystone_rbac.wasm'),
+        path.resolve(__dirname, '../../../rbac/target/wasm32-unknown-unknown/release/stellar_keystone_rbac.wasm'),
     ];
 
     for (const wasmPath of possiblePaths) {
         try {
-            return readFileSync(wasmPath);
+            return fs.readFileSync(wasmPath);
         } catch (e) {
             // Try next path
             continue;
@@ -270,6 +277,7 @@ function loadRbacWasm(): Buffer {
  *
  * @param network - Network to deploy to ('local' or 'testnet')
  * @param signerKey - Secret key for signing the deployment transaction
+ * @param wasmBinary - Optional WASM binary. If not provided, attempts to load from disk (Node only).
  * @returns Contract ID and transaction hash
  *
  * @example
@@ -280,7 +288,8 @@ function loadRbacWasm(): Buffer {
  */
 export async function deployRbac(
     network: NetworkType,
-    signerKey: string
+    signerKey: string,
+    wasmBinary?: Buffer
 ): Promise<DeployResult> {
     const config = NETWORK_CONFIG[network];
     const server = getRpcServer(network);
@@ -292,7 +301,7 @@ export async function deployRbac(
 
     // Step 1: Load WASM
     console.log('[SDK] Loading WASM binary...');
-    const wasmBuffer = loadRbacWasm();
+    const wasmBuffer = wasmBinary || loadRbacWasm();
     console.log(`[SDK] WASM loaded: ${wasmBuffer.length} bytes`);
 
     // Step 2: Upload WASM

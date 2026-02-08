@@ -1,15 +1,17 @@
 'use client'
 
 import { useState } from 'react'
-import { Lock, Clock } from 'lucide-react'
+import { Lock, Clock, AlertTriangle } from 'lucide-react'
 import { RBACStatCard } from '@/components/rbac-stat-card'
 import { CurrentContractCard } from '@/components/current-contract-card'
 import { RecentActivityCard } from '@/components/recent-activity-card'
 import { EmptyContractState } from '@/components/empty-contract-state'
+import { useStats } from '@/lib/api-client'
 
 export default function RBACControlPanel() {
-  const [isLoading] = useState(false)
-  const [contractDeployed] = useState(true)
+  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
+  const { stats, isLoading, isError } = useStats(contractId);
+  const [contractDeployed] = useState(!!contractId);
 
   if (isLoading) {
     return (
@@ -58,25 +60,32 @@ export default function RBACControlPanel() {
         </div>
 
         {/* Statistics Section */}
+        {isError && (
+          <div className="mb-8 p-4 bg-destructive/10 text-destructive rounded-lg flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5" />
+            <p>Failed to load stats. Is the indexer running?</p>
+          </div>
+        )}
+
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-3 mb-8">
           <RBACStatCard
             icon={<Lock className="h-5 w-5" />}
             label="Active Roles"
-            value="8"
+            value={stats ? stats.activeRoles.toString() : "-"}
             description="Roles defined"
             color="primary"
           />
           <RBACStatCard
             icon={<Clock className="h-5 w-5" />}
             label="Total Role Grants"
-            value="42"
+            value={stats ? stats.totalGrants.toString() : "-"}
             description="Granted permissions"
             color="success"
           />
           <RBACStatCard
             icon={<Lock className="h-5 w-5" />}
             label="Expiring Soon"
-            value="3"
+            value={stats ? stats.expiringSoon.toString() : "-"}
             description="In next 24 hours"
             color="warning"
           />

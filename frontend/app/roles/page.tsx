@@ -5,46 +5,80 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { ArrowRight, Users, Plus, Search } from 'lucide-react'
+import { ArrowRight, Users, Plus, Search, Loader2 } from 'lucide-react'
 import { RolesList } from '@/components/roles-list'
 import { CreateRoleModal } from '@/components/create-role-modal'
 import { toast } from 'sonner'
+import { useRoles } from '@/lib/api-client'
+import { createNewRole } from '@/lib/rbac-sdk'
+import { useContract } from '@/lib/api-client'
 
 export default function RolesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [isCreating, setIsCreating] = useState(false)
 
-  const [roles, setRoles] = useState([
-    { id: 'admin', name: 'Admin', isAdmin: true, memberCount: 3 },
-    { id: 'moderator', name: 'Moderator', isAdmin: false, memberCount: 8 },
-    { id: 'user', name: 'User', isAdmin: false, memberCount: 24 },
-  ])
+  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
+  const { roles, isLoading, isError, refreshRoles } = useRoles(contractId);
+  const { contract } = useContract(contractId);
 
   // Filter roles based on search query
   const filteredRoles = useMemo(() => {
-    if (!searchQuery.trim()) return roles
-    
+    if (!roles) return [];
+
+    // Map backend roles to UI model
+    // Assuming UI expects: id, name, isAdmin, memberCount
+    const uiRoles = roles.map(role => ({
+      id: role.id,
+      name: role.name,
+      // Mark as "admin" if it's the root admin role or has Admin in name
+      isAdmin: role.id.toLowerCase().includes('admin') || role.id === (contract as any)?.admin_role,
+      memberCount: role.memberCount
+    }));
+
+    if (!searchQuery.trim()) return uiRoles;
+
     const query = searchQuery.toLowerCase()
-    return roles.filter(role => 
-      role.name.toLowerCase().includes(query) || 
+    return uiRoles.filter(role =>
+      role.name.toLowerCase().includes(query) ||
       role.id.toLowerCase().includes(query)
     )
-  }, [roles, searchQuery])
+  }, [roles, searchQuery, contract])
 
-  const handleCreateRole = (data: { roleName: string; adminRole: string }) => {
-    console.log('[v0] Creating role:', data)
-
-    const newRole = {
-      id: data.roleName.toLowerCase().replace(/\s+/g, '-'),
-      name: data.roleName,
-      isAdmin: false,
-      memberCount: 0
+  const handleCreateRole = async (data: { roleName: string; adminRole: string }) => {
+    if (!contractId) {
+      toast.error('No contract configured');
+      return;
     }
 
-    setRoles([...roles, newRole])
-    setIsModalOpen(false)
-    toast.success(`Role "${data.roleName}" created successfully`)
+    const signerKey = prompt('Please enter your Secret Key (S...) to sign this transaction:');
+    if (!signerKey) return;
+
+    setIsCreating(true);
+    toast.info('Creating role...', { description: 'Waiting for transaction confirmation' });
+
+    const result = await createNewRole(contractId, data.roleName, data.adminRole, signerKey);
+
+    if (result.success) {
+      toast.success(`Role "${data.roleName}" created!`, {
+        description: `Transaction: ${result.txHash?.slice(0, 8)}...`
+      });
+      setIsModalOpen(false);
+      // Optimistic update or refresh
+      setTimeout(() => refreshRoles(), 4000);
+    } else {
+      toast.error('Failed to create role', { description: result.error });
+    }
+
+    setIsCreating(false);
+  }
+
+  if (isError) {
+    return (
+      <div className="min-h-screen bg-background p-8 flex justify-center">
+        <div className="text-destructive">Failed to load roles. Is the indexer running?</div>
+      </div>
+    );
   }
 
   return (
@@ -58,7 +92,7 @@ export default function RolesPage() {
               Define and manage permission roles
             </p>
           </div>
-          <Button onClick={() => setIsModalOpen(true)} className="mt-4 sm:mt-0">
+          <Button onClick={() => setIsModalOpen(true)} className="mt-4 sm:mt-0" disabled={isLoading || !contractId}>
             <Plus className="h-4 w-4 mr-2" />
             Create Role
           </Button>
@@ -76,7 +110,7 @@ export default function RolesPage() {
               className="pl-10 bg-card border-primary/20 focus:border-primary/40"
             />
           </div>
-          {searchQuery && (
+          {(roles) && (
             <p className="mt-2 text-sm text-muted-foreground">
               Found {filteredRoles.length} role{filteredRoles.length !== 1 ? 's' : ''}
             </p>
@@ -91,7 +125,8 @@ export default function RolesPage() {
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           onSubmit={handleCreateRole}
-          existingRoles={roles}
+          existingRoles={roles || []}
+          isLoading={isCreating}
         />
       </main>
     </div>

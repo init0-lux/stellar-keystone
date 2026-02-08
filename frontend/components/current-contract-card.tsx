@@ -3,19 +3,29 @@
 import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Copy, Check } from 'lucide-react'
+import { Copy, Check, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
+import { useContract } from '@/lib/api-client'
 
 export function CurrentContractCard() {
   const [copied, setCopied] = useState(false)
+  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
+  const { contract, isLoading, isError } = useContract(contractId);
 
-  const contractAddress = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF'
+  const displayAddress = contractId || 'No Contract Configured';
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(contractAddress)
-    setCopied(true)
-    toast.success('Contract address copied to clipboard')
-    setTimeout(() => setCopied(false), 2000)
+    if (contractId) {
+      await navigator.clipboard.writeText(contractId)
+      setCopied(true)
+      toast.success('Contract address copied to clipboard')
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  if (isError && contractId) {
+    // If we have a contract ID but it's not in the indexer, show warning
+    // Or if API failed
   }
 
   return (
@@ -31,11 +41,12 @@ export function CurrentContractCard() {
             </p>
             <div className="flex items-center gap-2">
               <code className="flex-1 rounded-lg bg-secondary p-3 text-sm font-mono text-foreground break-all">
-                {contractAddress}
+                {displayAddress}
               </code>
               <button
                 onClick={handleCopy}
-                className="flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-lg border border-border hover:bg-secondary transition-colors"
+                disabled={!contractId}
+                className="flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-lg border border-border hover:bg-secondary transition-colors disabled:opacity-50"
               >
                 {copied ? (
                   <Check className="h-4 w-4 text-green-600" />
@@ -53,7 +64,9 @@ export function CurrentContractCard() {
               </p>
               <div className="flex items-center gap-2">
                 <div className="h-2 w-2 rounded-full bg-warning animate-pulse" />
-                <span className="text-sm font-medium text-foreground">Testnet</span>
+                <span className="text-sm font-medium text-foreground">
+                  {contract?.network || (contractId ? 'Testnet' : 'Unknown')}
+                </span>
               </div>
             </div>
             <div>
@@ -61,15 +74,26 @@ export function CurrentContractCard() {
                 Status
               </p>
               <div className="flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
-                <span className="text-sm font-medium text-success">Active</span>
+                {isLoading ? (
+                  <span className="text-sm text-muted-foreground">Loading...</span>
+                ) : (
+                  <>
+                    <div className={`h-2 w-2 rounded-full ${contract ? 'bg-success' : 'bg-destructive'} animate-pulse`} />
+                    <span className={`text-sm font-medium ${contract ? 'text-success' : 'text-destructive'}`}>
+                      {contract ? 'Active' : (isError ? 'Indexer Error' : 'Not Indexed')}
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           </div>
 
           <div className="pt-2">
             <p className="text-xs text-muted-foreground">
-              This is your Stellar Soroban RBAC contract deployment. Use this address to manage roles and grant permissions.
+              {contract
+                ? 'Contract is indexed and active. Use this address to manage roles and grant permissions.'
+                : 'Wait for the indexer to pick up this contract, or verify the contract ID in configuration.'
+              }
             </p>
           </div>
         </div>

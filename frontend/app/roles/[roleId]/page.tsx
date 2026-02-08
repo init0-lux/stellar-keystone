@@ -1,137 +1,95 @@
 'use client'
 
-import { useState, use, useEffect } from 'react'
-import Link from 'next/link'
-import { ChevronRight } from 'lucide-react'
-import { RoleMetadataCard } from '@/components/role-metadata-card'
-import { MembersTable } from '@/components/members-table'
-import { GrantRoleCard } from '@/components/grant-role-card'
+import { useState, use } from 'react'
+import { useRouter } from 'next/navigation'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { ArrowLeft, Clock, Shield, Trash2, UserPlus, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
+import { useRoleMembers, useRoles } from '@/lib/api-client'
+import { grantUserRole, revokeUserRole } from '@/lib/rbac-sdk'
+import { formatDistanceToNow, isPast } from 'date-fns'
 
-const MOCK_MEMBERS = [
-  {
-    id: '1',
-    address: 'GAAA7AQRVQ4LRVQCF5LQHVZFGSMVVVLP4CEKPQRH5PXEQJGFHDZ3ZPYQNQ',
-    shortAddress: 'GAAA...PNQNQ',
-    expiry: null,
-    status: 'Active',
-  },
-  {
-    id: '2',
-    address: 'GBBB7AQRVQ4LRVQCF5LQHVZFGSMVVVLP4CEKPQRH5PXEQJGFHDZ3ZPYQNQ',
-    shortAddress: 'GBBB...PNQNQ',
-    expiry: '2024-12-31',
-    status: 'Active',
-  },
-  {
-    id: '3',
-    address: 'GCCC7AQRVQ4LRVQCF5LQHVZFGSMVVVLP4CEKPQRH5PXEQJGFHDZ3ZPYQNQ',
-    shortAddress: 'GCCC...PNQNQ',
-    expiry: '2024-01-15',
-    status: 'Expired',
-  },
-] as const
+interface RoleMember {
+  account: string
+  expiry: number | null
+  lastUpdated: string
+}
 
-export default function RoleMembersPage({ params }: { params: Promise<{ roleId: string }> }) {
+export default function RoleDetailsPage({ params }: { params: Promise<{ roleId: string }> }) {
+  const router = useRouter()
+  // Unwrap params using React.use() or await (Next.js 15 async params)
   const { roleId } = use(params)
-  const [members, setMembers] = useState<any[]>(MOCK_MEMBERS as any) // Cast to any to avoid readonly issues with MOCK_MEMBERS
-  const [isGranting, setIsGranting] = useState(false)
-  const [isPageLoading, setIsPageLoading] = useState(true)
 
-  // Fetch role metadata from API
-  const [metadata, setMetadata] = useState<{ description?: string, permissions?: string[] } | null>(null)
+  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID;
+  const { members, isLoading, isError, refreshMembers } = useRoleMembers(contractId, roleId);
+  const { roles } = useRoles(contractId);
 
-  useEffect(() => {
-    async function fetchMetadata() {
-      try {
-        const res = await fetch(`/api/roles/${roleId}`)
-        if (res.ok) {
-          const data = await res.json()
-          setMetadata(data)
-        }
-      } catch (error) {
-        console.error('Failed to fetch role metadata', error)
-      } finally {
-        // Simulate page load time
-        setTimeout(() => setIsPageLoading(false), 400)
-      }
+  const [newMemberAddress, setNewMemberAddress] = useState('')
+  const [isAddingMember, setIsAddingMember] = useState(false)
+  const [processingState, setProcessingState] = useState<Record<string, boolean>>({})
+
+  const roleDetails = roles?.find(r => r.id === roleId);
+
+  const handleAddMember = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newMemberAddress.trim() || !contractId) return
+
+    const signerKey = prompt('Please enter your Secret Key (S...) to sign this transaction:');
+    if (!signerKey) return;
+
+    setIsAddingMember(true)
+    toast.info(`Granting role ${roleId}...`);
+
+    const result = await grantUserRole(contractId, roleId, newMemberAddress.trim(), undefined, signerKey);
+
+    if (result.success) {
+      toast.success('Member added successfully', { description: `Tx: ${result.txHash?.slice(0, 8)}...` });
+      setNewMemberAddress('')
+      setTimeout(() => refreshMembers(), 4000);
+    } else {
+      toast.error('Failed to add member', { description: result.error });
     }
-    fetchMetadata()
-  }, [roleId])
 
-  // Generate role data based on ID and fetched metadata
-  const roleName = roleId.charAt(0).toUpperCase() + roleId.slice(1).replace(/-/g, ' ')
-
-  const role = {
-    id: roleId,
-    name: roleName,
-    isAdmin: roleId === 'admin',
-    memberCount: members.length,
-    description: metadata?.description,
-    permissions: metadata?.permissions
+    setIsAddingMember(false);
   }
 
-  const handleGrantRole = async (address: string, expiry: Date | null) => {
-    setIsGranting(true)
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+  const handleRemoveMember = async (memberAddress: string) => {
+    if (!contractId) return;
 
-      const newMember = {
-        id: String(members.length + 1),
-        address,
-        shortAddress: address.slice(0, 4) + '...' + address.slice(-6),
-        expiry: expiry ? expiry.toISOString().split('T')[0] : null,
-        status: 'Active',
-      }
+    // Confirm first
+    if (!confirm(`Are you sure you want to revoke role ${roleId} from ${memberAddress}?`)) return;
 
-      setMembers([newMember, ...members])
-      toast.success('Role granted successfully', {
-        description: `${newMember.shortAddress} has been granted the ${roleName} role`,
-      })
-    } catch (error) {
-      toast.error('Failed to grant role', {
-        description: 'Please try again later',
-      })
-    } finally {
-      setIsGranting(false)
+    const signerKey = prompt('Please enter your Secret Key (S...) to sign this transaction:');
+    if (!signerKey) return;
+
+    setProcessingState(prev => ({ ...prev, [memberAddress]: true }));
+    toast.info(`Revoking role...`);
+
+    const result = await revokeUserRole(contractId, roleId, memberAddress, signerKey);
+
+    if (result.success) {
+      toast.success('Member removed successfully');
+      setTimeout(() => refreshMembers(), 4000);
+    } else {
+      toast.error('Failed to remove member', { description: result.error });
     }
+
+    setProcessingState(prev => ({ ...prev, [memberAddress]: false }));
   }
 
-  const handleRevokeMember = (memberId: string) => {
-    const member = members.find(m => m.id === memberId)
-    setMembers(members.filter((m) => m.id !== memberId))
-    
-    if (member) {
-      toast.success('Role revoked successfully', {
-        description: `${member.shortAddress} has been removed from the role`,
-      })
-    }
+  if (isLoading) {
+    return <div className="p-8 text-center text-muted-foreground">Loading role details...</div>
   }
 
-  const isEmpty = members.length === 0
-
-  if (isPageLoading) {
+  if (isError) {
     return (
-      <div className="min-h-screen bg-background">
-        <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-          {/* Breadcrumb skeleton */}
-          <div className="mb-8 h-5 w-32 rounded bg-muted animate-pulse" />
-          
-          {/* Header skeleton */}
-          <div className="mb-8 space-y-2">
-            <div className="h-8 w-48 rounded bg-muted animate-pulse" />
-            <div className="h-4 w-64 rounded bg-muted animate-pulse" />
-          </div>
-
-          {/* Cards skeleton */}
-          <div className="grid gap-8 lg:grid-cols-2 mb-8">
-            <div className="h-64 rounded-lg bg-muted animate-pulse" />
-            <div className="h-64 rounded-lg bg-muted animate-pulse" />
-          </div>
-
-          {/* Table skeleton */}
-          <div className="h-96 rounded-lg bg-muted animate-pulse" />
-        </main>
+      <div className="p-8 text-center text-destructive flex flex-col items-center">
+        <AlertTriangle className="h-8 w-8 mb-2" />
+        <p>Failed to load role details. Check indexer connection.</p>
+        <Button variant="outline" className="mt-4" onClick={() => router.back()}>Go Back</Button>
       </div>
     )
   }
@@ -139,37 +97,124 @@ export default function RoleMembersPage({ params }: { params: Promise<{ roleId: 
   return (
     <div className="min-h-screen bg-background">
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* Breadcrumb */}
-        <div className="mb-8 flex items-center gap-2 text-sm text-muted-foreground">
-          <Link href="/roles" className="hover:text-foreground transition-colors">
-            Roles
-          </Link>
-          <ChevronRight className="h-4 w-4" />
-          <span className="text-foreground font-medium">{role.name}</span>
+        {/* Back Button */}
+        <Button
+          variant="ghost"
+          className="mb-6 pl-0 hover:bg-transparent hover:text-primary transition-colors"
+          onClick={() => router.back()}
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Roles
+        </Button>
+
+        {/* Header */}
+        <div className="mb-8 p-6 rounded-xl border border-border bg-card shadow-sm">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-4">
+              <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Shield className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl font-semibold text-foreground">{roleDetails?.name || roleId}</h1>
+                  {roleDetails?.adminRole && <Badge variant="secondary">Admin: {roleDetails.adminRole}</Badge>}
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  ID: <code className="text-xs bg-muted px-1 py-0.5 rounded">{roleId}</code> • {members?.length || 0} active members
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Page Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold text-foreground">Role: {role.name}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Manage accounts assigned to this role</p>
-        </div>
-
-        {/* Top Section: Metadata & Grant Role */}
-        <div className="grid gap-8 lg:grid-cols-2 mb-8">
-          {/* Left: Role Metadata */}
-          <div>
-            <RoleMetadataCard role={role} />
+        <div className="grid gap-8 grid-cols-1 lg:grid-cols-3">
+          {/* Members List */}
+          <div className="lg:col-span-2 space-y-6">
+            <Card className="border border-border shadow-sm">
+              <CardHeader className="border-b border-border">
+                <CardTitle>Role Members</CardTitle>
+                <CardDescription>Accounts granted this role</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {!members || members.length === 0 ? (
+                  <div className="py-12 text-center text-muted-foreground">
+                    No members assigned to this role yet.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border">
+                    {members.map((member) => {
+                      const isExpired = member.expiry ? isPast(new Date(member.expiry * 1000)) : false;
+                      return (
+                        <div key={member.account} className="flex items-center justify-between py-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <code className="text-sm font-mono text-foreground break-all">
+                                {member.account}
+                              </code>
+                              {isExpired && (
+                                <Badge variant="destructive" className="text-[10px] h-5">Expired</Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {member.expiry
+                                  ? `Expires ${formatDistanceToNow(new Date(member.expiry * 1000), { addSuffix: true })}`
+                                  : 'Never expires'}
+                              </span>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="ml-4 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => handleRemoveMember(member.account)}
+                            disabled={processingState[member.account]}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
 
-          {/* Right: Grant Role Form */}
-          <div>
-            <GrantRoleCard isLoading={isGranting} onGrant={handleGrantRole} />
+          {/* Add Member Form */}
+          <div className="space-y-6">
+            <Card className="border border-border shadow-sm sticky top-8">
+              <CardHeader className="border-b border-border">
+                <CardTitle>Add Member</CardTitle>
+                <CardDescription>Grant this role to a new account</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <form onSubmit={handleAddMember} className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">Account Address</label>
+                    <Input
+                      placeholder="G..."
+                      value={newMemberAddress}
+                      onChange={(e) => setNewMemberAddress(e.target.value)}
+                      className="font-mono text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Enter the Public Key (starts with G) of the account to add.
+                    </p>
+                  </div>
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={isAddingMember || !newMemberAddress.trim()}
+                  >
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    {isAddingMember ? 'Granting...' : 'Grant Role'}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
           </div>
-        </div>
-
-        {/* Bottom Section: Members Table */}
-        <div className="w-full">
-          <MembersTable members={members} isEmpty={isEmpty} onRevoke={handleRevokeMember} />
         </div>
       </main>
     </div>

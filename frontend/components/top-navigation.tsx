@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
 import { ChevronDown, Zap, Home, Users, Rocket, Loader2 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 
@@ -28,6 +28,10 @@ export function TopNavigation() {
   const [isSwitching, setIsSwitching] = useState(false)
   const [navigatingTo, setNavigatingTo] = useState<string | null>(null)
 
+  useEffect(() => {
+    setNavigatingTo(null)
+  }, [pathname])
+
   const handleNavigation = (href: string) => {
     if (pathname !== href) {
       setNavigatingTo(href)
@@ -37,12 +41,12 @@ export function TopNavigation() {
 
   const handleNetworkChange = async (newNetwork: 'testnet' | 'local') => {
     if (newNetwork === network) return
-    
+
     setIsSwitching(true)
-    
+
     // Simulate network switch delay
     await new Promise(resolve => setTimeout(resolve, 800))
-    
+
     setNetwork(newNetwork)
     setIsSwitching(false)
     toast.success(`Switched to ${newNetwork === 'testnet' ? 'Testnet' : 'Local'} network`)

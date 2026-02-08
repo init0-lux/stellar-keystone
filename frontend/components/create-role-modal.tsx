@@ -21,6 +21,7 @@ interface CreateRoleModalProps {
   onClose: () => void
   onSubmit: (data: { roleName: string; adminRole: string }) => void
   existingRoles: Array<{ id: string; name: string }>
+  isLoading?: boolean
 }
 
 export function CreateRoleModal({
@@ -28,28 +29,29 @@ export function CreateRoleModal({
   onClose,
   onSubmit,
   existingRoles,
+  isLoading = false,
 }: CreateRoleModalProps) {
   const [roleName, setRoleName] = useState('')
   const [adminRole, setAdminRole] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  // const [isSubmitting, setIsSubmitting] = useState(false) // Controlled by parent now via isLoading
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!roleName.trim()) return
 
-    setIsSubmitting(true)
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      onSubmit({ roleName, adminRole })
-      setRoleName('')
-      setAdminRole('')
-    } finally {
-      setIsSubmitting(false)
-    }
+    // setIsSubmitting(true)
+    // try {
+    // await new Promise((resolve) => setTimeout(resolve, 500))
+    onSubmit({ roleName, adminRole })
+    // setRoleName('')
+    // setAdminRole('')
+    // } finally {
+    // setIsSubmitting(false)
+    // }
   }
 
   const handleClose = () => {
-    if (!isSubmitting) {
+    if (!isLoading) {
       onClose()
       setRoleName('')
       setAdminRole('')
@@ -77,7 +79,7 @@ export function CreateRoleModal({
               placeholder="e.g., Editor, Reviewer"
               value={roleName}
               onChange={(e) => setRoleName(e.target.value)}
-              disabled={isSubmitting}
+              disabled={isLoading}
               className="border-border"
             />
           </div>
@@ -87,7 +89,7 @@ export function CreateRoleModal({
             <Label htmlFor="admin-role" className="text-sm font-medium">
               Admin Role
             </Label>
-            <Select value={adminRole} onValueChange={setAdminRole} disabled={isSubmitting}>
+            <Select value={adminRole} onValueChange={setAdminRole} disabled={isLoading}>
               <SelectTrigger id="admin-role" className="border-border">
                 <SelectValue placeholder="Select an admin role" />
               </SelectTrigger>
@@ -107,13 +109,13 @@ export function CreateRoleModal({
               type="button"
               variant="outline"
               onClick={handleClose}
-              disabled={isSubmitting}
+              disabled={isLoading}
               className="flex-1 bg-transparent"
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting || !roleName.trim()} className="flex-1">
-              {isSubmitting ? (
+            <Button type="submit" disabled={isLoading || !roleName.trim()} className="flex-1">
+              {isLoading ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Creating...
