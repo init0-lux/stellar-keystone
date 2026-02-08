@@ -10,8 +10,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
-import { ChevronDown, Zap, Home, Users, Rocket } from 'lucide-react'
+import { ChevronDown, Zap, Home, Users, Rocket, Loader2 } from 'lucide-react'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 
 const navItems = [
@@ -22,8 +23,17 @@ const navItems = [
 
 export function TopNavigation() {
   const pathname = usePathname()
+  const router = useRouter()
   const [network, setNetwork] = useState<'testnet' | 'local'>('testnet')
   const [isSwitching, setIsSwitching] = useState(false)
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null)
+
+  const handleNavigation = (href: string) => {
+    if (pathname !== href) {
+      setNavigatingTo(href)
+      router.push(href)
+    }
+  }
 
   const handleNetworkChange = async (newNetwork: 'testnet' | 'local') => {
     if (newNetwork === network) return
@@ -55,18 +65,24 @@ export function TopNavigation() {
             const Icon = item.icon
             const isActive = pathname === item.href ||
               (item.href !== '/' && pathname.startsWith(item.href))
+            const isNavigating = navigatingTo === item.href
 
             return (
-              <Link key={item.href} href={item.href}>
-                <Button
-                  variant={isActive ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className={`gap-2 ${isActive ? 'bg-secondary' : ''}`}
-                >
+              <Button
+                key={item.href}
+                onClick={() => handleNavigation(item.href)}
+                variant={isActive ? 'secondary' : 'ghost'}
+                size="sm"
+                disabled={isNavigating}
+                className={`gap-2 ${isActive ? 'bg-secondary' : ''} cursor-pointer hover:bg-secondary/50 transition-all`}
+              >
+                {isNavigating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
                   <Icon className="h-4 w-4" />
-                  <span className="hidden sm:inline">{item.label}</span>
-                </Button>
-              </Link>
+                )}
+                <span className="hidden sm:inline">{item.label}</span>
+              </Button>
             )
           })}
         </nav>
