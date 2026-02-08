@@ -132,11 +132,37 @@ rbac grant \
   --address GXXX... \
   --key-env SIGNER_KEY
 
+# Grant with expiry (30 days from now)
+rbac grant \
+  --contract $CONTRACT_ID \
+  --role WITHDRAWER \
+  --address GYYY... \
+  --expiry "2026-03-10T00:00:00Z" \
+  --key-env SIGNER_KEY
+
 # Verify the grant
 rbac has-role \
   --contract $CONTRACT_ID \
   --role WITHDRAWER \
   --address GXXX... \
+  --json
+
+# List all members of a role (requires indexer)
+rbac list-members \
+  --contract $CONTRACT_ID \
+  --role WITHDRAWER
+
+# Revoke a role
+rbac revoke \
+  --contract $CONTRACT_ID \
+  --role WITHDRAWER \
+  --address GXXX... \
+  --key-env SIGNER_KEY
+
+# Run configuration lint checks
+rbac lint \
+  --contract $CONTRACT_ID \
+  --network testnet \
   --json
 ```
 
